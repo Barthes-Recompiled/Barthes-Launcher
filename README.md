@@ -4,13 +4,13 @@ One home for the Barthes Recompiled ports of the original Xbox Harry Potter game
 
 | | Game | Port | State |
 |---|---|---|---|
-| I | Harry Potter and the Philosopher's Stone (Sorcerer's Stone) | [hp1_recomp](https://gitlab.com/barthes_recompiled/hp1_recomp) | Playable |
-| II | Harry Potter and the Chamber of Secrets | [hp2_recomp](https://gitlab.com/barthes_recompiled/hp2_recomp) | Playable |
-| III | Harry Potter and the Prisoner of Azkaban | [hp3_recomp](https://gitlab.com/barthes_recompiled/hp3_recomp) | In development |
+| I | Harry Potter and the Philosopher's Stone (Sorcerer's Stone) | [HP1-Recompiled](https://github.com/Barthes-Recompiled/HP1-Recompiled) | Playable |
+| II | Harry Potter and the Chamber of Secrets | [HP2-Recompiled](https://github.com/Barthes-Recompiled/HP2-Recompiled) | Playable |
+| III | Harry Potter and the Prisoner of Azkaban | [HP3-Recompiled](https://github.com/Barthes-Recompiled/HP3-Recompiled) | In development |
 
 The games stand as books on a shelf. Pick one and its page lets you:
 
-- **Install or update** the port from its GitLab releases (the download is checked against its SHA-256 before anything
+- **Install or update** the port from its GitHub releases (the download is checked against its SHA-256 before anything
   is replaced; your `game\` folder, saves and settings are never touched).
 - **Add your disc**: an `.iso`/`.xiso` image is unpacked, an extracted game folder is copied. The launcher reads the
   disc's `default.xbe` first and refuses another game's disc, so a Chamber of Secrets image can't end up in the
@@ -27,7 +27,7 @@ You need your own copy of the games. Nothing from the games is included here or 
 
 ## Using it
 
-1. Download `barthes_launcher.exe` from the [releases](https://gitlab.com/barthes_recompiled/barthes-launcher/-/releases)
+1. Download `barthes_launcher.exe` from the [releases](https://github.com/Barthes-Recompiled/Barthes-Launcher/releases)
    and put it in a folder of its own, for example `C:\Games\Barthes`.
 2. Start it, pick a book, press **Install**.
 3. Press **Add disc image or folder...** and choose your `.iso`, or the `default.xbe` of a disc you already extracted.
@@ -52,8 +52,8 @@ cmake --build build
 
 `tools/package.sh` builds the release zip and its `.sha256` into `dist/`. For testing, the launcher takes
 `--page <hp1|hp2|hp3|colophon>`, `--tab archipelago`, `--verify 1`, `--import <iso or default.xbe>`, `--install 1`
-and `--play 1`, and `barthes.ini` takes `release_project = group/project` in a game's section to install from
-another GitLab project (a fork, a test channel).
+and `--play 1`, and `barthes.ini` takes `release_project = owner/repo` in a game's section to install from
+another GitHub repository (a fork, a test channel).
 
 How a game repo publishes a release the launcher can install: [docs/releases.md](docs/releases.md).
 

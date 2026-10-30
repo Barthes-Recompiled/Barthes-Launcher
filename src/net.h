@@ -1,4 +1,4 @@
-// net.h - the little the launcher needs from the internet: GitLab's releases API, downloading a release, checking it
+// net.h - the little the launcher needs from the internet: GitHub's releases API, downloading a release, checking it
 // (net.cpp, WinHTTP + BCrypt, both part of Windows)
 #pragma once
 #include <windows.h>
@@ -27,7 +27,7 @@ bool net_Get(const std::wstring& url, std::string& body, std::string& error);
 // GET url into the file at path (written as path + ".part", renamed once whole)
 bool net_Download(const std::wstring& url, const std::wstring& path, Transfer* t, std::string& error);
 
-// The newest release of a GitLab project ("barthes_recompiled/hp1_recomp"). FALSE with error empty when the
+// The newest release of a GitHub repository ("Barthes-Recompiled/HP1-Recompiled"). FALSE with error empty when the
 // project simply has no release yet.
 bool net_LatestRelease(const std::string& project, Release& r, std::string& error);
 

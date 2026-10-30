@@ -15,7 +15,7 @@ struct GameInfo {
     const char* full_title;  // "Harry Potter and the Philosopher's Stone"
     const char* alt_title;   // the other region's name, or nullptr
     const char* year;        // the Xbox release
-    const char* project;     // GitLab project: releases come from here
+    const char* project;     // GitHub owner/repo: releases come from here
     const wchar_t* launcher; // the game's own launcher, which starts the game
     const wchar_t* toml;     // its settings file
     const wchar_t* mutex;    // held by the running game (each repo's single_instance.h)
@@ -38,7 +38,7 @@ struct GameState {
     int disc = -1;            // gamecheck list of game\, -1 unknown
     bool wrong_game = false;  // game\ holds another game's disc
     bool running = false;
-    // newest release on GitLab (filled in by the background check)
+    // newest release on GitHub (filled in by the background check)
     bool release_checked = false;
     bool has_release = false;
     Release release;

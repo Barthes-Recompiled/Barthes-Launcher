@@ -1,4 +1,4 @@
-// net.cpp - GitLab releases over WinHTTP, SHA-256 over BCrypt (net.h)
+// net.cpp - GitHub releases over WinHTTP, SHA-256 over BCrypt (net.h)
 #include "net.h"
 
 #include <bcrypt.h>
@@ -39,7 +39,7 @@ struct HInternet {
     operator HINTERNET() const { return h; }
 };
 
-// one GET; the body goes to sink (false from sink stops it). Follows GitLab's redirects to its download storage.
+// one GET; the body goes to sink (false from sink stops it). Follows GitHub's redirects to its download storage.
 template <class Sink>
 bool Request(const std::wstring& url, Transfer* t, Sink&& sink, std::string& error) {
     URL_COMPONENTS uc{};
@@ -125,7 +125,7 @@ bool Request(const std::wstring& url, Transfer* t, Sink&& sink, std::string& err
     return true;
 }
 
-// ── a small JSON reader: just enough for GitLab's release objects ───────────────────────────────────────────────
+// ── a small JSON reader: just enough for GitHub's release objects ───────────────────────────────────────────────
 
 struct Json {
     enum Kind { Null, Bool, Num, Str, Arr, Obj } kind = Null;
@@ -255,23 +255,19 @@ bool net_Download(const std::wstring& url, const std::wstring& path, Transfer* t
 }
 
 bool net_LatestRelease(const std::string& project, Release& r, std::string& error) {
-    std::string enc;
-    for (char c : project) enc += c == '/' ? std::string("%2F") : std::string(1, c);
     std::string body;
     error.clear();
-    if (!net_Get(Widen("https://gitlab.com/api/v4/projects/" + enc + "/releases?per_page=1"), body, error)) {
-        // GitLab answers 404 for a project that is not public yet: to a player that is the same as no release
+    if (!net_Get(Widen("https://api.github.com/repos/" + project + "/releases/latest"), body, error)) {
+        // GitHub answers 404 when the repository has no release yet (or is private): to a player, no release
         if (error.find("answered 404") != std::string::npos) error.clear();
         return false;
     }
-    Json root;
+    Json rel;
     Parser ps{body.data(), body.data() + body.size()};
-    if (!ps.Value(root) || root.kind != Json::Arr) {
-        error = "GitLab sent something the launcher could not read.";
+    if (!ps.Value(rel) || rel.kind != Json::Obj) {
+        error = "GitHub sent something the launcher could not read.";
         return false;
     }
-    if (root.arr.empty()) return false;  // no release yet: not an error
-    const Json& rel = root.arr[0];
     r = Release{};
     r.tag = rel["tag_name"].str;
     r.name = rel["name"].str;
@@ -279,20 +275,17 @@ bool net_LatestRelease(const std::string& project, Release& r, std::string& erro
     if (!r.version.empty() && (r.version[0] == 'v' || r.version[0] == 'V')) r.version.erase(0, 1);
     // the Windows build: a .zip with "windows" in its name if there are several, else the first .zip
     for (int pass = 0; pass < 2 && r.zip_url.empty(); pass++)
-        for (const Json& l : rel["assets"]["links"].arr) {
-            std::string name = l["name"].str, url = l["direct_asset_url"].str, lower = name;
+        for (const Json& l : rel["assets"].arr) {
+            std::string name = l["name"].str, url = l["browser_download_url"].str, lower = name;
             for (char& c : lower) c = char(tolower((unsigned char)c));
-            if (url.empty()) url = l["url"].str;
             if (r.zip_url.empty() && EndsWith(name, ".zip") && (pass || lower.find("windows") != std::string::npos)) {
                 r.zip_url = url;
                 r.zip_name = name;
             }
         }
     if (!r.zip_name.empty())
-        for (const Json& l : rel["assets"]["links"].arr)
-            if (_stricmp(l["name"].str.c_str(), (r.zip_name + ".sha256").c_str()) == 0) {
-                r.sha256_url = l["direct_asset_url"].str.empty() ? l["url"].str : l["direct_asset_url"].str;
-            }
+        for (const Json& l : rel["assets"].arr)
+            if (_stricmp(l["name"].str.c_str(), (r.zip_name + ".sha256").c_str()) == 0) r.sha256_url = l["browser_download_url"].str;
     if (r.zip_url.empty()) error = "The newest release (" + r.tag + ") has no Windows .zip attached yet.";
     return r.zip_url.size() > 0;
 }

@@ -1,5 +1,5 @@
 // barthes_launcher.exe: one place for the Barthes Recompiled Harry Potter ports. The games stand as books on a shelf
-// at the left; the chosen one's page at the right installs it from its GitLab releases, brings in the player's disc
+// at the left; the chosen one's page at the right installs it from its GitHub releases, brings in the player's disc
 // (an image is unpacked, a folder copied), checks the files against the disc's known-good list and starts the game's
 // own launcher, which holds its settings. Each game has an Archipelago page, a placeholder until that work lands.
 // Dear ImGui over Direct3D 11, like the games' own launchers; the look is the Barthes Launcher's own.
@@ -505,10 +505,10 @@ void DrawPlayTab(int i, float sc) {
 
     Heading("Install");
     if (!s.release_checked) {
-        ImGui::TextDisabled("Looking for releases on GitLab...");
+        ImGui::TextDisabled("Looking for releases on GitHub...");
     } else if (!s.has_release) {
         ImGui::PushStyleColor(ImGuiCol_Text, V(kInkSoft));
-        ImGui::TextWrapped("%s", s.release_error.empty() ? "No release has been published on GitLab yet." : s.release_error.c_str());
+        ImGui::TextWrapped("%s", s.release_error.empty() ? "No release has been published on GitHub yet." : s.release_error.c_str());
         ImGui::PopStyleColor();
     } else {
         const char* label = !s.installed ? "Install %s" : games_UpdateAvailable(i) ? "Update to %s" : "Reinstall %s";
@@ -600,7 +600,7 @@ void DrawArchipelagoTab(int i, float sc) {
     Rule(sc);
     Heading("Where to follow it");
     char url[160];
-    snprintf(url, sizeof url, "https://gitlab.com/%s", g.project);
+    snprintf(url, sizeof url, "https://github.com/%s", g.project);
     Link(url, url);
     Link("archipelago.gg", "https://archipelago.gg");
 }
@@ -693,12 +693,12 @@ void DrawColophon(ImVec2 a, ImVec2 b, float sc) {
     if (ImGui::Combo("##after", &games_AfterStart(), after, 3)) games_Save();
     if (RuleButton("Check for game updates")) {
         games_CheckReleasesAsync();
-        Say("Checking GitLab...", false);
+        Say("Checking GitHub...", false);
     }
     ImGui::SameLine();
     if (RuleButton("Open the launcher's folder")) ShellExecuteW(nullptr, L"open", games_ExeDir().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
     ImGui::Dummy(ImVec2(0, 8 * sc));
-    Link("gitlab.com/barthes_recompiled", "https://gitlab.com/barthes_recompiled");
+    Link("github.com/Barthes-Recompiled", "https://github.com/Barthes-Recompiled");
     ImGui::EndChild();
 }
 

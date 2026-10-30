@@ -17,13 +17,13 @@ namespace {
 // them; each ships <x>_launcher.exe, which sets up and starts <x>.exe (the game refuses to start any other way).
 const GameInfo kGames[] = {
     {"hp1", "Philosopher's Stone", "Harry Potter and the Philosopher's Stone", "Sorcerer's Stone", "2003",
-     "barthes_recompiled/hp1_recomp", L"hpps_launcher.exe", L"hpps.toml", L"Local\\hpps_game_running",
+     "Barthes-Recompiled/HP1-Recompiled", L"hpps_launcher.exe", L"hpps.toml", L"Local\\hpps_game_running",
      "Playable from start to finish", true, 0.0f},
     {"hp2", "Chamber of Secrets", "Harry Potter and the Chamber of Secrets", nullptr, "2002",
-     "barthes_recompiled/hp2_recomp", L"hpcos_launcher.exe", L"hpcos.toml", L"Local\\hpcos_game_running",
+     "Barthes-Recompiled/HP2-Recompiled", L"hpcos_launcher.exe", L"hpcos.toml", L"Local\\hpcos_game_running",
      "Playable from start to finish", true, 0.38f},
     {"hp3", "Prisoner of Azkaban", "Harry Potter and the Prisoner of Azkaban", nullptr, "2004",
-     "barthes_recompiled/hp3_recomp", L"hppoa_launcher.exe", L"hppoa.toml", L"Local\\hppoa_game_running",
+     "Barthes-Recompiled/HP3-Recompiled", L"hppoa_launcher.exe", L"hppoa.toml", L"Local\\hppoa_game_running",
      "In development: not playable yet", false, 0.62f},
 };
 constexpr int kCount = int(std::size(kGames));
