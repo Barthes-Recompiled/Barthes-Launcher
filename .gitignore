@@ -1,0 +1,5 @@
+/build*/
+/dist/
+/games/
+barthes.ini
+*.part
