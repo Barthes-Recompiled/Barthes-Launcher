@@ -4,22 +4,23 @@ One home for the Barthes Recompiled ports of the original Xbox Harry Potter game
 
 | | Game | Port | State |
 |---|---|---|---|
-| I | Harry Potter and the Philosopher's Stone (Sorcerer's Stone) | [HP1-Recompiled](https://github.com/Barthes-Recompiled/HP1-Recompiled) | Playable |
-| II | Harry Potter and the Chamber of Secrets | [HP2-Recompiled](https://github.com/Barthes-Recompiled/HP2-Recompiled) | Playable |
-| III | Harry Potter and the Prisoner of Azkaban | [HP3-Recompiled](https://github.com/Barthes-Recompiled/HP3-Recompiled) | In development |
+| I | Harry Potter and the Philosopher's Stone (Sorcerer's Stone) | [HP1-Recompiled](https://github.com/Barthes-Recompiled/HP1-Recompiled) | Playable, Archipelago |
+| II | Harry Potter and the Chamber of Secrets | [HP2-Recompiled](https://github.com/Barthes-Recompiled/HP2-Recompiled) | Playable, Archipelago coming soon |
+| III | Harry Potter and the Prisoner of Azkaban | [HP3-Recompiled](https://github.com/Barthes-Recompiled/HP3-Recompiled) | Beta, Archipelago coming soon |
 
 The games stand as books on a shelf. Pick one and its page lets you:
 
 - **Install or update** the port from its GitHub releases (the download is checked against its SHA-256 before anything
-  is replaced; your `game\` folder, saves and settings are never touched).
+  is replaced; your `game\` folder, saves and settings are never touched). A port built per disc edition has a PAL
+  and a USA download; the launcher installs the one for the disc you added.
 - **Add your disc**: an `.iso`/`.xiso` image is unpacked, an extracted game folder is copied. The launcher reads the
   disc's `default.xbe` first and refuses another game's disc, so a Chamber of Secrets image can't end up in the
   Philosopher's Stone folder.
 - **Verify files** against the known-good list of every file on the PAL and NTSC-US discs.
 - **Play**, which opens that game's own launcher (resolution, frame rate, controls and the rest live there), or
   **Game settings**, which opens it on its settings page even if you told it not to show at startup.
-- **Archipelago**: a page per game for the multiworld randomizer. It is a placeholder for now; the fields are saved
-  and will be wired up when each game's Archipelago support lands.
+- **Archipelago**: a page per game for the multiworld randomizer. Philosopher's Stone connects to a room (server, slot
+  name and password; Play starts the game connected). Chamber of Secrets and Prisoner of Azkaban: coming soon.
 
 ![The Play page](docs/screenshots/play.png)
 
