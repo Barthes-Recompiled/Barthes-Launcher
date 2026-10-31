@@ -286,6 +286,13 @@ bool net_LatestRelease(const std::string& project, Release& r, std::string& erro
     if (!r.zip_name.empty())
         for (const Json& l : rel["assets"].arr)
             if (_stricmp(l["name"].str.c_str(), (r.zip_name + ".sha256").c_str()) == 0) r.sha256_url = l["browser_download_url"].str;
+    for (const Json& l : rel["assets"].arr)
+        if (EndsWith(l["name"].str, ".zip")) {
+            ReleaseZip z{l["name"].str, l["browser_download_url"].str, {}};
+            for (const Json& h : rel["assets"].arr)
+                if (_stricmp(h["name"].str.c_str(), (z.name + ".sha256").c_str()) == 0) z.sha256_url = h["browser_download_url"].str;
+            r.zips.push_back(z);
+        }
     if (r.zip_url.empty()) error = "The newest release (" + r.tag + ") has no Windows .zip attached yet.";
     return r.zip_url.size() > 0;
 }

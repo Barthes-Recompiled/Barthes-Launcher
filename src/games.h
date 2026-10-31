@@ -21,6 +21,7 @@ struct GameInfo {
     const wchar_t* mutex;    // held by the running game (each repo's single_instance.h)
     const char* stage;       // how far the port is, shown on its page
     bool playable;
+    bool archipelago;        // the build connects to an Archipelago server (RECOMP_AP_SERVER / RECOMP_AP_SLOT)
     float hue;               // the accent on its spine and page
 };
 
@@ -33,6 +34,7 @@ struct GameState {
     bool custom_folder = false;
     bool installed = false;   // its launcher exe is there
     std::string version;      // the launcher exe's ProductVersion
+    std::string build_edition;  // "PAL" / "USA": the disc the installed build is made for (barthes.ini), or empty
     bool has_disc = false;    // game\default.xbe
     bool has_image = false;   // game\*.iso waiting to be unpacked by the game's own launcher
     int disc = -1;            // gamecheck list of game\, -1 unknown
@@ -59,6 +61,9 @@ void games_RefreshAll();
 void games_CheckReleasesAsync();  // all games' newest releases, on a thread
 void games_Poll();                // once a frame: takes in finished release checks, notices a game starting or ending
 bool games_UpdateAvailable(int i);
+// the installed build is for the other edition of the disc in game\ (a reinstall picks the right one)
+bool games_BuildMismatch(int i);
+const char* games_DiscEdition(int i);  // "PAL" / "USA" for the disc in game\, or nullptr
 
 // launcher-wide settings
 enum AfterStart { AFTER_MINIMIZE, AFTER_CLOSE, AFTER_STAY };

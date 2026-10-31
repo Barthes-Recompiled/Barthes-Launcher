@@ -18,13 +18,13 @@ namespace {
 const GameInfo kGames[] = {
     {"hp1", "Philosopher's Stone", "Harry Potter and the Philosopher's Stone", "Sorcerer's Stone", "2003",
      "Barthes-Recompiled/HP1-Recompiled", L"hpps_launcher.exe", L"hpps.toml", L"Local\\hpps_game_running",
-     "Playable from start to finish", true, 0.0f},
+     "Playable from start to finish", true, true, 0.0f},
     {"hp2", "Chamber of Secrets", "Harry Potter and the Chamber of Secrets", nullptr, "2002",
      "Barthes-Recompiled/HP2-Recompiled", L"hpcos_launcher.exe", L"hpcos.toml", L"Local\\hpcos_game_running",
-     "Playable from start to finish", true, 0.38f},
+     "Playable from start to finish", true, false, 0.38f},
     {"hp3", "Prisoner of Azkaban", "Harry Potter and the Prisoner of Azkaban", nullptr, "2004",
      "Barthes-Recompiled/HP3-Recompiled", L"hppoa_launcher.exe", L"hppoa.toml", L"Local\\hppoa_game_running",
-     "In development: not playable yet", false, 0.62f},
+     "Beta: playable from the Hogwarts Express on (NTSC-US disc)", true, false, 0.62f},
 };
 constexpr int kCount = int(std::size(kGames));
 
@@ -203,9 +203,35 @@ std::wstring ReleaseRoot(const std::wstring& dir) {
     return dirs == 1 && !files ? dir + L"\\" + only : dir;
 }
 
+// a game built per disc edition attaches one zip each, named with PAL or USA; pick the one for the disc in
+// game\ (before a disc is added: the first, the port's own edition)
+const char* EditionTag(const char* edition) { return strcmp(edition, "PAL") == 0 ? "PAL" : "USA"; }
+
+const ReleaseZip* PickZip(int i, std::string& edition) {
+    const GameState& st = g_state[i];
+    edition.clear();
+    const char* want = games_DiscEdition(i);
+    const ReleaseZip* first = nullptr;
+    for (const ReleaseZip& z : st.release.zips) {
+        std::string lower = z.name;
+        for (char& c : lower) c = char(tolower((unsigned char)c));
+        if (lower.find("windows") == std::string::npos) continue;
+        const char* tag = lower.find("-pal") != std::string::npos ? "PAL" : lower.find("-usa") != std::string::npos ? "USA" : "";
+        if (!first) { first = &z; edition = tag; }
+        if (want && strcmp(tag, want) == 0) { edition = tag; return &z; }
+    }
+    return first;
+}
+
 bool RunInstall(int i, std::string& result) {
     GameState& st = g_state[i];
-    const Release r = st.release;
+    Release r = st.release;
+    std::string edition;
+    if (const ReleaseZip* z = PickZip(i, edition)) {
+        r.zip_name = z->name;
+        r.zip_url = z->url;
+        r.sha256_url = z->sha256_url;
+    }
     std::wstring work = st.folder + L"\\.barthes";
     SHCreateDirectoryExW(nullptr, work.c_str(), nullptr);
     std::wstring zip = work + L"\\" + Widen(r.zip_name);
@@ -246,7 +272,9 @@ bool RunInstall(int i, std::string& result) {
     if (!MoveTree(ReleaseRoot(staging), st.folder, true, error)) { result = error; return false; }
     RemoveTree(work);
     SHCreateDirectoryExW(nullptr, (st.folder + L"\\game").c_str(), nullptr);
-    result = "Installed " + r.tag + ".";
+    IniSet(kGames[i].id, "build_edition", edition);
+    st.build_edition = edition;
+    result = "Installed " + r.tag + (edition.empty() ? "" : " for the " + edition + " disc") + ".";
     return true;
 }
 
@@ -458,6 +486,7 @@ void games_Refresh(int i) {
     s.disc = s.has_disc ? disc_IdentifyFolder(game.c_str()) : -1;
     s.wrong_game = s.disc >= 0 && strcmp(disc_Get(s.disc)->game, g.id) != 0;
     s.verified = IniGet(g.id, "verified");
+    s.build_edition = s.installed ? IniGet(g.id, "build_edition") : "";
     HANDLE m = OpenMutexW(SYNCHRONIZE, FALSE, g.mutex);
     s.running = m != nullptr;
     if (m) CloseHandle(m);
@@ -494,6 +523,17 @@ void games_Poll() {
 bool games_UpdateAvailable(int i) {
     const GameState& s = g_state[i];
     return s.installed && s.has_release && !s.version.empty() && CompareVersions(s.release.version, s.version) > 0;
+}
+
+const char* games_DiscEdition(int i) {
+    const GameState& s = g_state[i];
+    return s.disc >= 0 && !s.wrong_game ? EditionTag(disc_Get(s.disc)->edition) : nullptr;
+}
+
+bool games_BuildMismatch(int i) {
+    const GameState& s = g_state[i];
+    const char* disc = games_DiscEdition(i);
+    return s.installed && disc && !s.build_edition.empty() && s.build_edition != disc;
 }
 
 bool games_Play(int i, bool settings, std::string& error) {
@@ -539,6 +579,22 @@ bool games_Play(int i, bool settings, std::string& error) {
             for (auto& l : lines) fprintf(f, "%s\n", l.c_str());
             fclose(f);
         }
+    }
+    // Archipelago: the game connects when RECOMP_AP_SERVER and RECOMP_AP_SLOT are set (its own launcher passes them
+    // on); the password goes in saves\archipelago\connection.toml so it never shows on a command line (the game
+    // reads it between the first and the last quote, unescaped)
+    if (g.archipelago && s.ap_enabled && !s.ap_server.empty() && !s.ap_slot.empty()) {
+        SetEnvironmentVariableW(L"RECOMP_AP_SERVER", Widen(s.ap_server).c_str());
+        SetEnvironmentVariableW(L"RECOMP_AP_SLOT", Widen(s.ap_slot).c_str());
+        std::wstring dir = s.folder + L"\\saves\\archipelago";
+        SHCreateDirectoryExW(nullptr, dir.c_str(), nullptr);
+        if (FILE* f = _wfopen((dir + L"\\connection.toml").c_str(), L"wb")) {
+            fprintf(f, "password = \"%s\"\n", s.ap_password.c_str());
+            fclose(f);
+        }
+    } else {
+        SetEnvironmentVariableW(L"RECOMP_AP_SERVER", nullptr);
+        SetEnvironmentVariableW(L"RECOMP_AP_SLOT", nullptr);
     }
     std::wstring exe = s.folder + L"\\" + g.launcher;
     std::wstring cmd = L"\"" + exe + L"\"";

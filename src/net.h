@@ -6,7 +6,13 @@
 #include <string>
 #include <vector>
 
+// one .zip attached to a release; a game built per disc edition has one each ("...-windows-PAL-1.0.0.zip")
+struct ReleaseZip {
+    std::string name, url, sha256_url;
+};
+
 struct Release {
+    std::vector<ReleaseZip> zips;  // every .zip attached
     std::string tag;          // "v0.4.0"
     std::string version;      // "0.4.0"
     std::string name;

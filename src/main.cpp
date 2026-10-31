@@ -30,7 +30,7 @@
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND, UINT, WPARAM, LPARAM);
 
 #ifndef BARTHES_VERSION
-#define BARTHES_VERSION "0.1.0"
+#define BARTHES_VERSION "1.0.0"
 #endif
 
 namespace {
@@ -416,6 +416,11 @@ std::string DiscLine(int i, ImU32& mark) {
             mark = games_Info(i).playable ? kWarn : kInkSoft;
             return games_Info(i).playable ? "Present, but not a disc the launcher recognises" : "Present";
         }
+        if (games_BuildMismatch(i)) {
+            mark = kWarn;
+            return std::string(disc_Get(s.disc)->edition) + " disc, but the installed build is for the " + s.build_edition +
+                   " disc: reinstall to get the right one";
+        }
         mark = s.verified.empty() ? kInkSoft : kGood;
         return std::string(disc_Get(s.disc)->edition) + " disc" + (s.verified.empty() ? ", not verified yet" : ", verified " + s.verified.substr(0, 10));
     }
@@ -511,10 +516,12 @@ void DrawPlayTab(int i, float sc) {
         ImGui::TextWrapped("%s", s.release_error.empty() ? "No release has been published on GitHub yet." : s.release_error.c_str());
         ImGui::PopStyleColor();
     } else {
-        const char* label = !s.installed ? "Install %s" : games_UpdateAvailable(i) ? "Update to %s" : "Reinstall %s";
+        bool mismatch = games_BuildMismatch(i);
+        const char* label = !s.installed ? "Install %s" : games_UpdateAvailable(i) ? "Update to %s"
+                          : mismatch ? "Reinstall %s for this disc" : "Reinstall %s";
         char buf[96];
         snprintf(buf, sizeof buf, label, s.release.tag.c_str());
-        bool primary = !s.installed || games_UpdateAvailable(i);
+        bool primary = !s.installed || games_UpdateAvailable(i) || mismatch;
         if (primary ? InkButton(buf, ImVec2(0, 0), accent, !s.running) : RuleButton(buf, ImVec2(0, 0), !s.running)) {
             if (!games_StartInstall(i)) Say("Could not start the install.", true);
         }
@@ -566,16 +573,24 @@ void DrawPlayTab(int i, float sc) {
 void DrawArchipelagoTab(int i, float sc) {
     const GameInfo& g = games_Info(i);
     GameState& s = games_State(i);
+    bool live = g.archipelago;
+    Heading(live ? "Multiworld" : "Coming soon");
     ImGui::PushStyleColor(ImGuiCol_Text, V(kInkSoft));
-    ImGui::TextWrapped("Archipelago multiworld randomizer support for %s is on its way. This page will connect the game "
-                       "to a multiworld session when it lands. Until then these fields are saved but not used.", g.title);
+    if (live)
+        ImGui::TextWrapped("Play %s in an Archipelago multiworld: tick the box, fill in the room's server and your slot "
+                           "name, then press Play on the Play tab. The game connects as it starts. The room needs this "
+                           "game's apworld (below).", g.title);
+    else
+        ImGui::TextWrapped("Archipelago multiworld randomizer support for %s is coming soon. This page will connect the "
+                           "game to a multiworld session when it lands. Until then these fields are saved but not used.",
+                           g.title);
     ImGui::PopStyleColor();
     ImGui::Dummy(ImVec2(0, 8 * sc));
     float lw = 120 * sc, fw = std::min(ImGui::GetContentRegionAvail().x - lw, 380 * sc);
     bool changed = false;
     char buf[256];
-    ImGui::BeginDisabled(true);
-    ImGui::Checkbox("Play this game in an Archipelago multiworld", &s.ap_enabled);
+    ImGui::BeginDisabled(!live);
+    if (ImGui::Checkbox("Play this game in an Archipelago multiworld", &s.ap_enabled)) changed = true;
     ImGui::EndDisabled();
     ImGui::Dummy(ImVec2(0, 4 * sc));
     auto field = [&](const char* label, std::string& v, ImGuiInputTextFlags flags) {
@@ -593,15 +608,28 @@ void DrawArchipelagoTab(int i, float sc) {
     field("Password", s.ap_password, ImGuiInputTextFlags_Password);
     if (changed) games_Save();
     ImGui::Dummy(ImVec2(0, 8 * sc));
-    RuleButton("Connect", ImVec2(140 * sc, 0), false);
-    ImGui::SameLine();
-    ImGui::TextDisabled("Coming with the Archipelago update");
-    ImGui::Dummy(ImVec2(0, 12 * sc));
-    Rule(sc);
-    Heading("Where to follow it");
-    char url[160];
-    snprintf(url, sizeof url, "https://github.com/%s", g.project);
-    Link(url, url);
+    char url[200];
+    if (live) {
+        ImGui::TextDisabled(s.ap_enabled && !s.ap_slot.empty() ? "Play connects to %s as %s."
+                                                                : "Off: Play starts an ordinary game.",
+                            s.ap_server.c_str(), s.ap_slot.c_str());
+        ImGui::Dummy(ImVec2(0, 12 * sc));
+        Rule(sc);
+        Heading("The apworld");
+        snprintf(url, sizeof url, "https://github.com/%s/releases/latest", g.project);
+        ImGui::TextWrapped("Whoever hosts the room adds %s.apworld to Archipelago; it is attached to the game's newest "
+                           "release.", g.id[2] == '1' ? "hpps" : g.id);
+        Link(url, url);
+    } else {
+        RuleButton("Connect", ImVec2(140 * sc, 0), false);
+        ImGui::SameLine();
+        ImGui::TextDisabled("Coming with the Archipelago update");
+        ImGui::Dummy(ImVec2(0, 12 * sc));
+        Rule(sc);
+        Heading("Where to follow it");
+        snprintf(url, sizeof url, "https://github.com/%s", g.project);
+        Link(url, url);
+    }
     Link("archipelago.gg", "https://archipelago.gg");
 }
 
@@ -635,7 +663,7 @@ void DrawGamePage(int i, ImVec2 a, ImVec2 b, float sc) {
     ImGui::Dummy(ImVec2(0, 10 * sc));
 
     // tabs as words with a rule under the chosen one
-    const char* tabs[] = {"Play", "Archipelago"};
+    const char* tabs[] = {"Play", g.archipelago ? "Archipelago" : "Archipelago (coming soon)"};
     for (int t = 0; t < 2; t++) {
         if (t) ImGui::SameLine(0, 26 * sc);
         ImGui::PushStyleColor(ImGuiCol_Text, V(g_tab == t ? kInk : kInkFaint));
