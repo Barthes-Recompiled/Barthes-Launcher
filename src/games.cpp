@@ -14,16 +14,16 @@
 namespace {
 
 // The ports themselves are MiddleDucky's (HP-PS-Xbox-Recomp, HP-COS-Xbox-Recomp) and the Barthes Recompiled forks of
-// them; each ships <x>_launcher.exe, which sets up and starts <x>.exe (the game refuses to start any other way).
+// them; Play starts <x>.exe itself, with the environment and the launcher variable its own launcher would give it.
 const GameInfo kGames[] = {
     {"hp1", "Philosopher's Stone", "Harry Potter and the Philosopher's Stone", "Sorcerer's Stone", "2003",
-     "Barthes-Recompiled/HP1-Recompiled", L"hpps_launcher.exe", L"hpps.toml", L"Local\\hpps_game_running",
+     "Barthes-Recompiled/HP1-Recompiled", L"hpps.exe", L"HPPS_LAUNCHER", L"hpps.toml", L"Local\\hpps_game_running",
      "Playable from start to finish", true, true, "PAL", 0.0f},
     {"hp2", "Chamber of Secrets", "Harry Potter and the Chamber of Secrets", nullptr, "2002",
-     "Barthes-Recompiled/HP2-Recompiled", L"hpcos_launcher.exe", L"hpcos.toml", L"Local\\hpcos_game_running",
+     "Barthes-Recompiled/HP2-Recompiled", L"hpcos.exe", L"HPCOS_LAUNCHER", L"hpcos.toml", L"Local\\hpcos_game_running",
      "Playable from start to finish", true, false, "USA", 0.38f},
     {"hp3", "Prisoner of Azkaban", "Harry Potter and the Prisoner of Azkaban", nullptr, "2004",
-     "Barthes-Recompiled/HP3-Recompiled", L"hppoa_launcher.exe", L"hppoa.toml", L"Local\\hppoa_game_running",
+     "Barthes-Recompiled/HP3-Recompiled", L"hppoa.exe", L"HPPOA_LAUNCHER", L"hppoa.toml", L"Local\\hppoa_game_running",
      "Beta: playable from the Hogwarts Express on", true, false, "USA", 0.62f},
 };
 constexpr int kCount = int(std::size(kGames));
@@ -477,7 +477,7 @@ void games_Save() {
 void games_Refresh(int i) {
     GameState& s = g_state[i];
     const GameInfo& g = kGames[i];
-    std::wstring exe = s.folder + L"\\" + g.launcher;
+    std::wstring exe = s.folder + L"\\" + g.exe;
     s.installed = Exists(exe);
     s.version = s.installed ? ProductVersion(exe) : "";
     std::wstring game = s.folder + L"\\game";
@@ -561,38 +561,21 @@ bool games_Play(int i, bool settings, std::string& error) {
         error = "The game isn't installed yet.";
         return false;
     }
-    if (settings) {
-        // the game launcher's own "show this page" setting, turned on for this start (it stays on until the player
-        // turns it off there again)
-        std::wstring toml = s.folder + L"\\" + g.toml;
-        std::vector<std::string> lines;
-        {
-            FILE* f = _wfopen(toml.c_str(), L"rb");
-            if (f) {
-                char buf[4096];
-                while (fgets(buf, sizeof buf, f)) {
-                    std::string l = buf;
-                    while (!l.empty() && (l.back() == '\n' || l.back() == '\r')) l.pop_back();
-                    lines.push_back(l);
-                }
-                fclose(f);
-            }
-        }
-        bool found = false;
-        for (auto& l : lines) {
-            size_t a = l.find_first_not_of(" \t");
-            if (a != std::string::npos && l.compare(a, 13, "show_launcher") == 0) {
-                l = "show_launcher = true";
-                found = true;
-            }
-        }
-        if (!found) lines.push_back("show_launcher = true");
-        FILE* f = _wfopen(toml.c_str(), L"wb");
-        if (f) {
-            for (auto& l : lines) fprintf(f, "%s\n", l.c_str());
-            fclose(f);
-        }
-    }
+    // the game itself, started the way its own launcher starts it: the environment the port expects (anything the
+    // player set already wins), and the variable it checks to know it was started by a launcher
+    const std::pair<const wchar_t*, const wchar_t*> kEnv[] = {
+        {L"RECOMP_TITLE_KEVENTS", L"1"}, {L"RECOMP_VBLANK", L"1"},       {L"RECOMP_AC97_READY", L"1"},
+        {L"RECOMP_DSP_ACK", L"0x834D0810"}, {L"RECOMP_PB_EXEC", L"1"}, {L"RECOMP_FB_WINDOW", L"1"},
+        {L"RECOMP_USB", L"1"},           {L"RECOMP_ACK_SLEEP_US", L"250"},
+    };
+    for (auto [k, v] : kEnv)
+        if (!GetEnvironmentVariableW(k, nullptr, 0)) SetEnvironmentVariableW(k, v);
+    // Philosopher's Stone and Prisoner of Azkaban give freed memory back, as their launchers ask; Chamber of Secrets
+    // doesn't
+    SetEnvironmentVariableW(L"RECOMP_HEAP_RECLAIM", strcmp(g.id, "hp2") != 0 ? L"1" : nullptr);
+    // Game settings: the port's settings page before the game starts (F10's page, with "Start game")
+    SetEnvironmentVariableW(L"RECOMP_START_MENU", settings ? L"1" : L"0");
+    SetEnvironmentVariableW(g.launcher_env, L"1");
     // Archipelago: the game connects when RECOMP_AP_SERVER and RECOMP_AP_SLOT are set (its own launcher passes them
     // on); the password goes in saves\archipelago\connection.toml so it never shows on a command line (the game
     // reads it between the first and the last quote, unescaped)
@@ -609,12 +592,25 @@ bool games_Play(int i, bool settings, std::string& error) {
         SetEnvironmentVariableW(L"RECOMP_AP_SERVER", nullptr);
         SetEnvironmentVariableW(L"RECOMP_AP_SLOT", nullptr);
     }
-    std::wstring exe = s.folder + L"\\" + g.launcher;
+    std::wstring exe = s.folder + L"\\" + g.exe;
     std::wstring cmd = L"\"" + exe + L"\"";
+    // the game's console output (its [CRASH] reports among it) to <game>_run.log beside it, for a problem report: a
+    // windowed launcher has no console to hand down
+    std::wstring log_path = exe.substr(0, exe.size() - 4) + L"_run.log";
+    SECURITY_ATTRIBUTES sa{sizeof sa, nullptr, TRUE};
+    HANDLE log = CreateFileW(log_path.c_str(), GENERIC_WRITE, FILE_SHARE_READ, &sa, CREATE_ALWAYS,
+                             FILE_ATTRIBUTE_NORMAL, nullptr);
     STARTUPINFOW si{sizeof si};
+    if (log != INVALID_HANDLE_VALUE) {
+        si.dwFlags = STARTF_USESTDHANDLES;
+        si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+        si.hStdOutput = si.hStdError = log;
+    }
     PROCESS_INFORMATION pi{};
-    if (!CreateProcessW(exe.c_str(), cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, s.folder.c_str(), &si, &pi)) {
-        error = "Could not start " + Narrow(g.launcher) + ".";
+    BOOL ok = CreateProcessW(exe.c_str(), cmd.data(), nullptr, nullptr, TRUE, 0, nullptr, s.folder.c_str(), &si, &pi);
+    if (log != INVALID_HANDLE_VALUE) CloseHandle(log);
+    if (!ok) {
+        error = "Could not start " + Narrow(g.exe) + ".";
         return false;
     }
     CloseHandle(pi.hThread);

@@ -16,7 +16,8 @@ struct GameInfo {
     const char* alt_title;   // the other region's name, or nullptr
     const char* year;        // the Xbox release
     const char* project;     // GitHub owner/repo: releases come from here
-    const wchar_t* launcher; // the game's own launcher, which starts the game
+    const wchar_t* exe;      // the game, which Play starts
+    const wchar_t* launcher_env;  // set for the game: it refuses to start without it (each repo's single_instance.h)
     const wchar_t* toml;     // its settings file
     const wchar_t* mutex;    // held by the running game (each repo's single_instance.h)
     const char* stage;       // how far the port is, shown on its page

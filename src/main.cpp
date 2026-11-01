@@ -1,7 +1,7 @@
 // barthes_launcher.exe: one place for the Barthes Recompiled Harry Potter ports. The games stand as books on a shelf
 // at the left; the chosen one's page at the right installs it from its GitHub releases, brings in the player's disc
-// (an image is unpacked, a folder copied), checks the files against the disc's known-good list and starts the game's
-// own launcher, which holds its settings. Each game has an Archipelago page, a placeholder until that work lands.
+// (an image is unpacked, a folder copied), checks the files against the disc's known-good list and starts the game
+// (Game settings opens the port's settings page first). Each game has an Archipelago page.
 // Dear ImGui over Direct3D 11, like the games' own launchers; the look is the Barthes Launcher's own.
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -433,7 +433,7 @@ std::string DiscLine(int i, ImU32& mark) {
     }
     if (s.has_image) {
         mark = kWarn;
-        return "A disc image is waiting in game\\ (the game unpacks it on first start)";
+        return "A disc image is in game\\: choose it with Add disc image or folder to unpack it";
     }
     mark = kInkFaint;
     return "None yet: add your own disc image or game folder";
@@ -485,7 +485,7 @@ void DrawPlayTab(int i, float sc) {
         return;
     }
 
-    bool can_play = s.installed && !s.running && !s.wrong_game && (s.has_disc || s.has_image);
+    bool can_play = s.installed && !s.running && !s.wrong_game && s.has_disc;
     float bw = 200 * sc, bh = 46 * sc;
     if (s.running) {
         InkButton("Playing...", ImVec2(bw, bh), accent, false);

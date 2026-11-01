@@ -17,8 +17,8 @@ The games stand as books on a shelf. Pick one and its page lets you:
   disc's `default.xbe` first and refuses another game's disc, so a Chamber of Secrets image can't end up in the
   Philosopher's Stone folder.
 - **Verify files** against the known-good list of every file on the PAL and NTSC-US discs.
-- **Play**, which opens that game's own launcher (resolution, frame rate, controls and the rest live there), or
-  **Game settings**, which opens it on its settings page even if you told it not to show at startup.
+- **Play**, which starts the game itself, or **Game settings**, which starts it on the port's settings page
+  (resolution, frame rate, controls and the rest; F10 and the game's own Settings menu change them too).
 - **Archipelago**: a page per game for the multiworld randomizer. Philosopher's Stone connects to a room (server, slot
   name and password; Play starts the game connected). Chamber of Secrets and Prisoner of Azkaban: coming soon.
 
