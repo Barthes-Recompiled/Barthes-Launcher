@@ -13,7 +13,7 @@ One home for the Barthes Recompiled ports of the original Xbox Harry Potter game
 The games stand as books on a shelf. Pick one and its page lets you:
 
 - **Install or update** the port from its GitHub releases (the download is checked against its SHA-256 before anything
-  is replaced; your `game\` folder, saves and settings are never touched). A port built per disc edition has a PAL
+  is replaced, when the release carries one; your `game\` folder, saves and settings are never touched). A port built per disc edition has a PAL
   and a USA download; the launcher installs the one for the disc you added.
 - **Add your disc**: an `.iso`/`.xiso` image is unpacked, an extracted game folder is copied. The launcher reads the
   disc's `default.xbe` first and refuses another game's disc, so a Chamber of Secrets image can't end up in the
@@ -31,20 +31,20 @@ You need your own copy of the games. Nothing from the games is included here or 
 
 ## Setting up
 
-1. Download `barthes_launcher.exe` from the [releases](https://github.com/Barthes-Recompiled/Barthes-Launcher/releases/latest)
-   and put it in a folder of its own, for example `C:\Games\Barthes`. It is a single file; nothing is installed into
-   Windows.
-2. Start it and pick a book from the shelf.
+1. Download `BarthesLauncher-windows-<version>.zip` from the
+   [releases](https://github.com/Barthes-Recompiled/Barthes-Launcher/releases/latest) and unzip it somewhere of its own,
+   for example `C:\Games` (it makes a `BarthesLauncher` folder). Nothing is installed into Windows.
+2. Start `barthes_launcher.exe` and pick a book from the shelf.
 3. Press **Install**. The port's newest release is downloaded from its GitHub repository.
 4. Press **Add disc image or folder...** and choose your `.iso` / `.xiso`, or the `default.xbe` of a disc you already
-   extracted. The launcher reads the disc's edition and, if the port is built per edition, swaps in the PAL or USA
-   build to match.
+   extracted. The launcher reads the disc's edition; if the installed build is for the other edition (PAL or USA), the
+   page says so and **Reinstall for this disc** fetches the right one.
 5. Press **Play**.
 
 Repeat 2 to 5 for each game you own. Updates appear on a book's page when its repository publishes a new release.
 
 ```
-C:\Games\Barthes\
+C:\Games\BarthesLauncher\
   barthes_launcher.exe
   barthes.ini          the launcher's choices
   games\hp1\           Philosopher's Stone: hpps.exe, hpps.toml, saves\, shadercache\, game\ (your disc)
