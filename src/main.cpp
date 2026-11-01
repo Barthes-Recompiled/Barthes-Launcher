@@ -536,7 +536,7 @@ void DrawPlayTab(int i, float sc) {
     }
     if (RuleButton("Use another folder...")) {
         std::wstring dir;
-        if (PickFile(dir, true, L"Choose the folder with the game's launcher (or an empty folder to install into)")) {
+        if (PickFile(dir, true, L"Choose the folder with the game's exe (or an empty folder to install into)")) {
             s.folder = dir;
             s.custom_folder = true;
             games_Save();

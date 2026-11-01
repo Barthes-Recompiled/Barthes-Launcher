@@ -348,6 +348,13 @@ std::string CheckSummary(const GameCheck& c, int list) {
     return s;
 }
 
+// Prisoner of Azkaban has no file list yet: its discs are known by default.xbe alone, so there is nothing to verify
+bool HasList(int i) {
+    for (int k = 0; const DiscList* d = disc_Get(k); k++)
+        if (!strcmp(d->game, kGames[i].id)) return true;
+    return false;
+}
+
 bool RunVerify(int i, std::string& result) {
     std::wstring dir = g_state[i].folder + L"\\game";
     int list = disc_IdentifyFolder(dir.c_str());
@@ -378,14 +385,14 @@ DWORD WINAPI JobThread(void*) {
         SetStage("Unpacking the disc image");
         ok = xiso_Extract(Widen(g_job.result).c_str(), dir.c_str(), &g_job.unpack) != FALSE;
         result = ok ? "" : Narrow(g_job.unpack.error);
-        if (ok) { g_job.kind = JOB_VERIFY; ok = RunVerify(i, result); }
+        if (ok && HasList(i)) { g_job.kind = JOB_VERIFY; ok = RunVerify(i, result); }
         break;
     }
     case JOB_COPY: {
         std::wstring dir = g_state[i].folder + L"\\game";
         SetStage("Copying the game files");
         ok = RunCopy(Widen(g_job.result), dir, result);
-        if (ok) { g_job.kind = JOB_VERIFY; ok = RunVerify(i, result); }
+        if (ok && HasList(i)) { g_job.kind = JOB_VERIFY; ok = RunVerify(i, result); }
         break;
     }
     case JOB_VERIFY: ok = RunVerify(i, result); break;
