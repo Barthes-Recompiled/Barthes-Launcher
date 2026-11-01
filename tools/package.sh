@@ -2,11 +2,11 @@
 # The release players get: builds barthes_launcher.exe (Release) and puts in dist/:
 #   BarthesLauncher-windows-<ver>.zip         barthes_launcher.exe, README, LICENSE, licenses\
 #   BarthesLauncher-windows-<ver>.zip.sha256
-# Run from an MSYS2 UCRT64 shell: VERSION=1.0.1 tools/package.sh
+# Run from an MSYS2 UCRT64 shell: VERSION=1.0.2 tools/package.sh
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
-ver="${VERSION:-1.0.1}"
+ver="${VERSION:-1.0.2}"
 cmake -S . -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release -DBARTHES_VERSION="$ver" > /dev/null
 cmake --build build-release
 

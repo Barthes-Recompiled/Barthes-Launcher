@@ -4,11 +4,11 @@ One home for the Barthes Recompiled ports of the original Xbox Harry Potter game
 
 | | Game | Port | State |
 |---|---|---|---|
-| I | Harry Potter and the Philosopher's Stone (Sorcerer's Stone) | [HP1-Recompiled](https://github.com/Barthes-Recompiled/HP1-Recompiled) | 1.0.1: playable, Archipelago |
-| II | Harry Potter and the Chamber of Secrets | [HP2-Recompiled](https://github.com/Barthes-Recompiled/HP2-Recompiled) | 1.0.1: playable, Archipelago coming soon |
-| III | Harry Potter and the Prisoner of Azkaban | [HP3-Recompiled](https://github.com/Barthes-Recompiled/HP3-Recompiled) | 0.5.1 Beta, Archipelago coming soon |
+| I | Harry Potter and the Philosopher's Stone (Sorcerer's Stone) | [HP1-Recompiled](https://github.com/Barthes-Recompiled/HP1-Recompiled) | 1.0.2: playable, Archipelago |
+| II | Harry Potter and the Chamber of Secrets | [HP2-Recompiled](https://github.com/Barthes-Recompiled/HP2-Recompiled) | 1.0.2: playable, Archipelago coming soon |
+| III | Harry Potter and the Prisoner of Azkaban | [HP3-Recompiled](https://github.com/Barthes-Recompiled/HP3-Recompiled) | 0.5.2 Beta, Archipelago coming soon |
 
-**Current release: 1.0.1.**
+**Current release: 1.0.2.**
 
 The games stand as books on a shelf. Pick one and its page lets you:
 

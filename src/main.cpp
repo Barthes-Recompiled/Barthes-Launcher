@@ -30,7 +30,7 @@
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND, UINT, WPARAM, LPARAM);
 
 #ifndef BARTHES_VERSION
-#define BARTHES_VERSION "1.0.1"
+#define BARTHES_VERSION "1.0.2"
 #endif
 
 namespace {
