@@ -199,8 +199,11 @@ void PushPaperStyle() {
     ImGui::PushStyleColor(ImGuiCol_PlotHistogram, V(kInk));
     ImGui::PushStyleColor(ImGuiCol_TextSelectedBg, V(Rgb(214, 196, 160)));
     ImGui::PushStyleColor(ImGuiCol_NavHighlight, V(kInk));  // the controller's focus: an ink frame
+    ImGui::PushStyleColor(ImGuiCol_Button, V(Rgb(226, 216, 196)));  // a dropdown's arrow
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, V(Rgb(232, 223, 205)));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, V(Rgb(220, 208, 186)));
 }
-void PopPaperStyle() { ImGui::PopStyleColor(14); }
+void PopPaperStyle() { ImGui::PopStyleColor(17); }
 
 // the main action on a page: solid in the game's binding colour
 bool InkButton(const char* label, ImVec2 size, ImU32 color, bool enabled = true) {
@@ -783,7 +786,7 @@ void DrawColophon(ImVec2 a, ImVec2 b, float sc) {
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Controller buttons");
     ImGui::SameLine(200 * sc);
-    const char* labels[] = {"Xbox (A B X Y)", "PlayStation (cross circle)", "Nintendo (B A Y X)"};
+    const char* labels[] = {"Xbox", "PlayStation", "Nintendo"};
     ImGui::SetNextItemWidth(260 * sc);
     if (ImGui::Combo("##labels", &games_PadLabels(), labels, 3)) games_Save();
     if (ImGui::Checkbox("Show what the controller's buttons do along the bottom", &games_PadHints())) games_Save();
