@@ -34,8 +34,8 @@ const GameInfo& games_Info(int i);
 struct GameState {
     std::wstring folder;      // where the build and game\ live
     bool custom_folder = false;
-    bool installed = false;   // its launcher exe is there
-    std::string version;      // the launcher exe's ProductVersion
+    bool installed = false;   // its exe is there
+    std::string version;      // the game exe's ProductVersion
     std::string build_edition;  // "PAL" / "USA": the disc the installed build is made for (barthes.ini), or empty
     bool has_disc = false;    // game\default.xbe
     bool has_image = false;   // game\*.iso waiting to be unpacked by the game's own launcher

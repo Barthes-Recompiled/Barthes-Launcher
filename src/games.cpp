@@ -14,7 +14,8 @@
 namespace {
 
 // The ports themselves are MiddleDucky's (HP-PS-Xbox-Recomp, HP-COS-Xbox-Recomp) and the Barthes Recompiled forks of
-// them; Play starts <x>.exe itself, with the environment and the launcher variable its own launcher would give it.
+// them; Play starts <x>.exe itself, with the environment the port expects (and the launcher variable that builds before
+// the upstream launcher's removal check for).
 const GameInfo kGames[] = {
     {"hp1", "Philosopher's Stone", "Harry Potter and the Philosopher's Stone", "Sorcerer's Stone", "2003",
      "Barthes-Recompiled/HP1-Recompiled", L"hpps.exe", L"HPPS_LAUNCHER", L"hpps.toml", L"Local\\hpps_game_running",
@@ -561,8 +562,8 @@ bool games_Play(int i, bool settings, std::string& error) {
         error = "The game isn't installed yet.";
         return false;
     }
-    // the game itself, started the way its own launcher starts it: the environment the port expects (anything the
-    // player set already wins), and the variable it checks to know it was started by a launcher
+    // the game itself, with the environment the port expects (anything the player set already wins; current builds set
+    // the same defaults themselves), and the variable builds up to 1.0.1 / 0.5.1 check to know a launcher started them
     const std::pair<const wchar_t*, const wchar_t*> kEnv[] = {
         {L"RECOMP_TITLE_KEVENTS", L"1"}, {L"RECOMP_VBLANK", L"1"},       {L"RECOMP_AC97_READY", L"1"},
         {L"RECOMP_DSP_ACK", L"0x834D0810"}, {L"RECOMP_PB_EXEC", L"1"}, {L"RECOMP_FB_WINDOW", L"1"},
