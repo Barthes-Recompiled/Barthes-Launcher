@@ -27,6 +27,12 @@ The games stand as books on a shelf. Pick one and its page lets you:
 
 ![The Play page](docs/screenshots/play.png)
 
+The three ports running on Windows (title screens):
+
+| Philosopher's Stone | Chamber of Secrets | Prisoner of Azkaban |
+|---|---|---|
+| ![Philosopher's Stone title screen](docs/screenshots/game-hp1.png) | ![Chamber of Secrets title screen](docs/screenshots/game-hp2.png) | ![Prisoner of Azkaban title screen](docs/screenshots/game-hp3.png) |
+
 You need your own copy of the games. Nothing from the games is included here or in any release.
 
 ## Setting up
