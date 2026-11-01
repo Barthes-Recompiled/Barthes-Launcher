@@ -328,10 +328,11 @@ void ComeBack() {
     pad_Hold();
 }
 
-// call before a control: it takes the focus if the page wants it placed and this control can be used
-void FocusHere(bool usable) {
+// call after a control: it takes the focus if the page wants it placed and this control can be used. (FocusItem lands
+// on that very control; SetKeyboardFocusHere counts controls and can land on a neighbour.)
+void FocusThis(bool usable) {
     if (g_focus_page && usable) {
-        ImGui::SetKeyboardFocusHere();
+        ImGui::FocusItem();
         g_focus_page = false;
     }
 }
@@ -649,17 +650,17 @@ void DrawBrowser(float sc) {
         float foot = ImGui::GetFrameHeightWithSpacing() + 12 * sc;
         ImGui::BeginChild("##list", ImVec2(0, -foot), ImGuiChildFlags_NavFlattened);
         if (!b.dir.empty()) {
-            if (b.refocus && b.focus.empty()) ImGui::SetKeyboardFocusHere();
             if (ImGui::Selectable("..   Up a level")) up = true;
+            if (b.refocus && b.focus.empty()) ImGui::FocusItem();
         }
         if (b.entries.empty() && !b.dir.empty()) ImGui::TextDisabled(b.folder ? "No folders here." : "Nothing here the launcher can read.");
         for (int k = 0; k < (int)b.entries.size(); k++) {
             const BrowseEntry& e = b.entries[k];
-            if (b.refocus && ((b.focus.empty() && b.dir.empty() && k == 0) || (!b.focus.empty() && e.path == b.focus)))
-                ImGui::SetKeyboardFocusHere();
             ImGui::PushID(k);
             if (ImGui::Selectable(e.label.c_str())) act = k;
             ImGui::PopID();
+            if (b.refocus && ((b.focus.empty() && b.dir.empty() && k == 0) || (!b.focus.empty() && e.path == b.focus)))
+                ImGui::FocusItem();
         }
         b.refocus = false;
         ImGui::EndChild();
@@ -769,8 +770,8 @@ void DrawKeyboard(float sc) {
                 if (c) ImGui::SameLine();
                 char cap[2] = {keys[c], 0};
                 ImGui::PushID(r * 16 + c);
-                if (appearing && r == 1 && c == 0) ImGui::SetKeyboardFocusHere();
                 if (ImGui::Button(cap, ImVec2(kw, kh))) typed += keys[c];
+                if (appearing && r == 1 && c == 0) ImGui::FocusItem();
                 ImGui::PopID();
             }
         }
@@ -883,8 +884,8 @@ void DrawJob(float sc, ImU32 accent) {
         dl->AddRectFilled(ImVec2(p.x + w * t * 0.8f, p.y), ImVec2(p.x + w * (t * 0.8f + 0.2f), p.y + h), accent, h);
     }
     ImGui::Dummy(ImVec2(w, h + 8 * sc));
-    FocusHere(true);
     if (RuleButton("Cancel", ImVec2(120 * sc, 0))) games_CancelJob();
+    FocusThis(true);
     if (j.finished) {
         Say(j.result.empty() ? (j.ok ? "Done." : "Stopped.") : j.result, !j.ok);
         games_FinishJob();
@@ -920,12 +921,12 @@ void DrawPlayTab(int i, float sc) {
     if (s.running) {
         InkButton("Playing...", ImVec2(bw, bh), accent, false);
     } else {
-        FocusHere(can_play);
         if (InkButton("Play", ImVec2(bw, bh), accent, can_play)) StartGame(i, false);
+        FocusThis(can_play);
     }
     ImGui::SameLine(0, 12 * sc);
-    FocusHere(s.installed && !s.running);
     if (RuleButton("Game settings", ImVec2(160 * sc, bh), s.installed && !s.running)) StartGame(i, true);
+    FocusThis(s.installed && !s.running);
     if (!can_play && !s.running) {
         ImGui::PushStyleColor(ImGuiCol_Text, V(kInkSoft));
         if (!g.playable && !s.installed) ImGui::TextWrapped("This port is still being built. It will appear here once it boots.");
@@ -951,19 +952,19 @@ void DrawPlayTab(int i, float sc) {
         char buf[96];
         snprintf(buf, sizeof buf, label, s.release.tag.c_str());
         bool primary = !s.installed || games_UpdateAvailable(i) || mismatch;
-        FocusHere(!s.running);
         if (primary ? InkButton(buf, ImVec2(0, 0), accent, !s.running) : RuleButton(buf, ImVec2(0, 0), !s.running)) {
             if (!games_StartInstall(i)) Say("Could not start the install.", true);
         }
+        FocusThis(!s.running);
         ImGui::SameLine();
     }
-    FocusHere(true);
     if (RuleButton("Use another folder...")) {
         std::wstring dir;
         if (PadMode()) OpenBrowser(i, true);
         else if (PickFile(dir, true, L"Choose the folder with the game's exe (or an empty folder to install into)"))
             UseFolder(i, dir);
     }
+    FocusThis(true);
     if (s.custom_folder) {
         ImGui::SameLine();
         if (RuleButton("Back to the default folder")) {
@@ -1015,8 +1016,8 @@ void DrawArchipelagoTab(int i, float sc) {
     bool changed = false;
     char buf[256];
     ImGui::BeginDisabled(!live);
-    FocusHere(live);
     if (ImGui::Checkbox("Play this game in an Archipelago multiworld", &s.ap_enabled)) changed = true;
+    FocusThis(live);
     ImGui::EndDisabled();
     ImGui::Dummy(ImVec2(0, 4 * sc));
     auto field = [&](const char* label, std::string& v, ImGuiInputTextFlags flags) {
@@ -1069,8 +1070,8 @@ void DrawArchipelagoTab(int i, float sc) {
         snprintf(url, sizeof url, "https://github.com/%s", g.project);
         Link(url, url);
     }
-    FocusHere(true);  // nothing above to start on (the fields would start typing)
     Link("archipelago.gg", "https://archipelago.gg");
+    FocusThis(true);  // nothing above to start on
 }
 
 void DrawGamePage(int i, ImVec2 a, ImVec2 b, float sc) {
@@ -1161,8 +1162,8 @@ void DrawColophon(ImVec2 a, ImVec2 b, float sc) {
     ImGui::SameLine(200 * sc);
     const char* after[] = {"Minimize the launcher", "Close the launcher", "Keep the launcher open"};
     ImGui::SetNextItemWidth(260 * sc);
-    FocusHere(true);
     if (ImGui::Combo("##after", &games_AfterStart(), after, 3)) games_Save();
+    FocusThis(true);
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Controller buttons");
     ImGui::SameLine(200 * sc);
@@ -1302,8 +1303,8 @@ void DrawQuitQuestion(float sc) {
         ImGui::PopFont();
         ImGui::Dummy(ImVec2(0, 10 * sc));
         bool appearing = ImGui::IsWindowAppearing();  // opened by this frame's B or Esc, which mustn't close it again
-        if (appearing) ImGui::SetKeyboardFocusHere();
         if (InkButton("Quit", ImVec2(140 * sc, 40 * sc), kInk)) PostQuitMessage(0);
+        if (appearing) ImGui::FocusItem();
         ImGui::SameLine(0, 12 * sc);
         bool stay = RuleButton("Stay", ImVec2(140 * sc, 40 * sc));
         if (stay || (!appearing && ((pad_Pressed() & PAD_B) || ImGui::IsKeyPressed(ImGuiKey_Escape, false))))
