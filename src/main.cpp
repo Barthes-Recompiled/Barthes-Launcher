@@ -13,12 +13,14 @@
 #include <d3d11.h>
 #include <dwmapi.h>
 #include <shellapi.h>
+#include <shlobj.h>
 #include <shobjidl.h>
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <string>
+#include <vector>
 
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -500,6 +502,322 @@ void DrawShelf(ImDrawList* dl, ImVec2 a, ImVec2 b, float sc) {
     ImGui::PopFont();
 }
 
+// ── choosing without a mouse: a file browser and an on-screen keyboard ─────────────────────────────────────────
+// The Windows file dialog and text fields need a mouse or keyboard, so with the controller in hand (or in couch mode)
+// the page asks here instead: a browser of the computer's places and folders, and a keyboard of keys to press.
+
+bool PadMode() { return g_couch || (pad_Connected() && g_nav_shown); }
+
+void UseFolder(int i, const std::wstring& dir) {
+    GameState& s = games_State(i);
+    s.folder = dir;
+    s.custom_folder = true;
+    games_Save();
+    games_Refresh(i);
+    Say(s.installed ? "Found the game there." : "No build there yet: installing will put it in that folder.", false);
+}
+
+void UseDisc(int i, const std::wstring& src) {
+    std::string err;
+    if (!games_StartImport(i, src, err)) Say(err, true);
+    else Say("", false);
+}
+
+struct BrowseEntry {
+    std::wstring path;
+    std::string label;
+    bool dir;
+};
+
+struct Browser {
+    bool want_open = false, shown = false;
+    int game = 0;
+    bool folder = false;          // choosing a folder (Use another folder), else a disc image or default.xbe
+    std::wstring dir;             // empty: the places to start from
+    std::vector<BrowseEntry> entries;
+    std::wstring focus;           // the entry to put the focus on once listed (the folder just left); empty: the first
+    bool refocus = false;
+    std::wstring last;            // where the last choice was made, offered first next time
+} g_browse;
+
+std::wstring KnownFolder(REFKNOWNFOLDERID id) {
+    PWSTR p = nullptr;
+    std::wstring r;
+    if (SUCCEEDED(SHGetKnownFolderPath(id, 0, nullptr, &p))) r = p;
+    CoTaskMemFree(p);
+    return r;
+}
+
+std::wstring Lower(std::wstring s) {
+    for (wchar_t& c : s) c = towlower(c);
+    return s;
+}
+
+void BrowseTo(const std::wstring& dir, const std::wstring& focus = L"") {
+    Browser& b = g_browse;
+    b.dir = dir;
+    b.entries.clear();
+    b.focus = focus;
+    b.refocus = true;
+    if (dir.empty()) {
+        auto place = [&](const std::wstring& path, const char* name) {
+            if (!path.empty() && GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES)
+                b.entries.push_back({path, std::string(name) + "   " + Narrow(path), true});
+        };
+        place(b.last, "Last used");
+        place(KnownFolder(FOLDERID_Downloads), "Downloads");
+        place(KnownFolder(FOLDERID_Desktop), "Desktop");
+        place(KnownFolder(FOLDERID_Documents), "Documents");
+        DWORD drives = GetLogicalDrives();
+        for (int d = 0; d < 26; d++) {
+            if (!(drives & (1u << d))) continue;
+            wchar_t root[] = {wchar_t(L'A' + d), L':', L'\\', 0};
+            UINT type = GetDriveTypeW(root);
+            if (type == DRIVE_NO_ROOT_DIR || type == DRIVE_UNKNOWN) continue;
+            const char* kind = type == DRIVE_REMOVABLE ? "Removable drive" : type == DRIVE_CDROM ? "Disc drive"
+                             : type == DRIVE_REMOTE ? "Network drive" : "Drive";
+            b.entries.push_back({std::wstring(root, 2), std::string(kind) + "   " + Narrow(std::wstring(root, 2)), true});
+        }
+        return;
+    }
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileExW((dir + L"\\*").c_str(), FindExInfoBasic, &fd, FindExSearchNameMatch, nullptr,
+                                FIND_FIRST_EX_LARGE_FETCH);
+    if (h == INVALID_HANDLE_VALUE) return;
+    do {
+        std::wstring name = fd.cFileName;
+        if (name == L"." || name == L".." || (fd.dwFileAttributes & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM))) continue;
+        bool is_dir = fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
+        if (!is_dir) {
+            if (b.folder) continue;
+            std::wstring low = Lower(name);
+            auto ends = [&](const wchar_t* ext) {
+                size_t n = wcslen(ext);
+                return low.size() >= n && low.compare(low.size() - n, n, ext) == 0;
+            };
+            if (!ends(L".iso") && !ends(L".xiso") && low != L"default.xbe") continue;
+        }
+        b.entries.push_back({dir + L"\\" + name, Narrow(name) + (is_dir ? "\\" : ""), is_dir});
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+    std::sort(b.entries.begin(), b.entries.end(), [](const BrowseEntry& x, const BrowseEntry& y) {
+        if (x.dir != y.dir) return x.dir;
+        return Lower(x.path) < Lower(y.path);
+    });
+}
+
+void OpenBrowser(int game, bool folder) {
+    g_browse.game = game;
+    g_browse.folder = folder;
+    g_browse.want_open = true;
+    BrowseTo(L"");
+}
+
+std::wstring UpFrom(const std::wstring& dir) {
+    size_t cut = dir.find_last_of(L'\\');
+    return cut == std::wstring::npos ? L"" : dir.substr(0, cut);  // "C:" goes up to the places
+}
+
+void DrawBrowser(float sc) {
+    Browser& b = g_browse;
+    const char* id = "##browser";
+    if (b.want_open) {
+        ImGui::OpenPopup(id);
+        b.want_open = false;
+    }
+    b.shown = false;
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(ImVec2(vp->Pos.x + vp->Size.x * 0.5f, vp->Pos.y + vp->Size.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(std::min(vp->Size.x - 40 * sc, 760 * sc), vp->Size.y * 0.8f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(28 * sc, 22 * sc));
+    ImGui::PushStyleVar(ImGuiStyleVar_PopupBorderSize, 1.0f * sc);
+    if (ImGui::BeginPopupModal(id, nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize)) {
+        b.shown = true;
+        bool appearing = ImGui::IsWindowAppearing();
+        const char* title = games_Info(b.game).title;
+        ImGui::PushFont(g_spine);
+        ImGui::Text(b.folder ? "A folder for %s" : "Your %s disc", title);
+        ImGui::PopFont();
+        ImGui::PushStyleColor(ImGuiCol_Text, V(kInkSoft));
+        ImGui::TextWrapped("%s", b.dir.empty() ? (b.folder ? "Places on this computer. Open one, then choose the folder."
+                                                           : "Places on this computer. Open one to find your .iso, or default.xbe in an extracted game folder.")
+                                               : Narrow(b.dir).c_str());
+        ImGui::PopStyleColor();
+        Rule(sc);
+        int act = -1;
+        bool up = false;
+        float foot = ImGui::GetFrameHeightWithSpacing() + 12 * sc;
+        ImGui::BeginChild("##list", ImVec2(0, -foot), ImGuiChildFlags_NavFlattened);
+        if (!b.dir.empty()) {
+            if (b.refocus && b.focus.empty()) ImGui::SetKeyboardFocusHere();
+            if (ImGui::Selectable("..   Up a level")) up = true;
+        }
+        if (b.entries.empty() && !b.dir.empty()) ImGui::TextDisabled(b.folder ? "No folders here." : "Nothing here the launcher can read.");
+        for (int k = 0; k < (int)b.entries.size(); k++) {
+            const BrowseEntry& e = b.entries[k];
+            if (b.refocus && ((b.focus.empty() && b.dir.empty() && k == 0) || (!b.focus.empty() && e.path == b.focus)))
+                ImGui::SetKeyboardFocusHere();
+            ImGui::PushID(k);
+            if (ImGui::Selectable(e.label.c_str())) act = k;
+            ImGui::PopID();
+        }
+        b.refocus = false;
+        ImGui::EndChild();
+        ImGui::Dummy(ImVec2(0, 4 * sc));
+        bool cancel = RuleButton("Cancel", ImVec2(140 * sc, 0));
+        bool choose_here = false;
+        if (b.folder && !b.dir.empty()) {
+            ImGui::SameLine(0, 12 * sc);
+            choose_here = InkButton("Choose this folder", ImVec2(0, 0), Binding(games_Info(b.game).hue));
+        }
+        unsigned pr = pad_Pressed();
+        if (!appearing && ((pr & PAD_B) || ImGui::IsKeyPressed(ImGuiKey_Escape, false) || ImGui::IsKeyPressed(ImGuiKey_Backspace, false))) {
+            if (b.dir.empty()) cancel = true;
+            else up = true;
+        }
+        if ((pr & PAD_Y) && b.folder && !b.dir.empty()) choose_here = true;
+
+        if (cancel) {
+            ImGui::CloseCurrentPopup();
+        } else if (choose_here) {
+            b.last = b.dir;
+            ImGui::CloseCurrentPopup();
+            UseFolder(b.game, b.dir);
+        } else if (up) {
+            std::wstring from = b.dir;
+            BrowseTo(UpFrom(b.dir), from);
+        } else if (act >= 0) {
+            BrowseEntry e = b.entries[act];
+            if (e.dir) {
+                BrowseTo(e.path);
+            } else {
+                b.last = b.dir;
+                ImGui::CloseCurrentPopup();
+                UseDisc(b.game, e.path);
+            }
+        }
+        ImGui::EndPopup();
+    }
+    ImGui::PopStyleVar(2);
+}
+
+struct Keyboard {
+    bool want_open = false, shown = false;
+    std::string* target = nullptr;
+    std::string label, text;
+    bool password = false, shift = false;
+} g_keys;
+
+void OpenKeyboard(std::string& target, const char* label, bool password) {
+    g_keys.target = &target;
+    g_keys.label = label;
+    g_keys.text = target;
+    g_keys.password = password;
+    g_keys.shift = false;
+    g_keys.want_open = true;
+}
+
+void DrawKeyboard(float sc) {
+    Keyboard& k = g_keys;
+    const char* id = "##keyboard";
+    ImGuiIO& io = ImGui::GetIO();
+    if (k.want_open) {
+        ImGui::OpenPopup(id);
+        k.want_open = false;
+    }
+    k.shown = false;
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(ImVec2(vp->Pos.x + vp->Size.x * 0.5f, vp->Pos.y + vp->Size.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(28 * sc, 22 * sc));
+    ImGui::PushStyleVar(ImGuiStyleVar_PopupBorderSize, 1.0f * sc);
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(6 * sc, 6 * sc));
+    bool open = ImGui::BeginPopupModal(id, nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove);
+    // a real keyboard types straight in while this is up, so its Space and Enter mustn't also press the focused key
+    if (open) io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableKeyboard;
+    else io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    if (open) {
+        k.shown = true;
+        bool appearing = ImGui::IsWindowAppearing();
+        ImGui::PushFont(g_spine);
+        ImGui::TextUnformatted(k.label.c_str());
+        ImGui::PopFont();
+        // the text so far, in a field-like box, with a caret
+        float kw = 46 * sc, kh = 42 * sc, row_w = kw * 10 + 6 * sc * 9;
+        ImVec2 p = ImGui::GetCursorScreenPos();
+        float fh = ImGui::GetFrameHeight() + 6 * sc;
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        dl->AddRectFilled(p, ImVec2(p.x + row_w, p.y + fh), Rgb(250, 246, 237), 3 * sc);
+        dl->AddRect(p, ImVec2(p.x + row_w, p.y + fh), kPaperEdge, 3 * sc);
+        std::string shown = k.password ? std::string(k.text.size(), '*') : k.text;
+        if (fmod(ImGui::GetTime(), 1.0) < 0.6) shown += "|";
+        ImVec2 ts = ImGui::CalcTextSize(shown.c_str());
+        float tx = std::min(0.0f, row_w - 24 * sc - ts.x);  // the end stays in view as it grows
+        dl->PushClipRect(p, ImVec2(p.x + row_w, p.y + fh), true);
+        dl->AddText(ImVec2(p.x + 12 * sc + tx, p.y + (fh - ts.y) * 0.5f), kInk, shown.c_str());
+        dl->PopClipRect();
+        ImGui::Dummy(ImVec2(row_w, fh + 6 * sc));
+
+        static const char* const rows[2][4] = {
+            {"1234567890", "qwertyuiop", "asdfghjkl:", "zxcvbnm.-_"},
+            {"!@#$%^&*()", "QWERTYUIOP", "ASDFGHJKL;", "ZXCVBNM,=/"},
+        };
+        std::string typed;
+        bool del = false, done = false, cancel = false;
+        for (int r = 0; r < 4; r++) {
+            const char* keys = rows[k.shift][r];
+            for (int c = 0; keys[c]; c++) {
+                if (c) ImGui::SameLine();
+                char cap[2] = {keys[c], 0};
+                ImGui::PushID(r * 16 + c);
+                if (appearing && r == 1 && c == 0) ImGui::SetKeyboardFocusHere();
+                if (ImGui::Button(cap, ImVec2(kw, kh))) typed += keys[c];
+                ImGui::PopID();
+            }
+        }
+        float wide = (row_w - 6 * sc * 4) / 5;
+        if (RuleButton(k.shift ? "abc" : "Shift", ImVec2(wide, kh))) k.shift = !k.shift;
+        ImGui::SameLine();
+        if (RuleButton("Space", ImVec2(wide, kh))) typed += ' ';
+        ImGui::SameLine();
+        if (RuleButton("Delete", ImVec2(wide, kh))) del = true;
+        ImGui::SameLine();
+        if (RuleButton("Paste", ImVec2(wide, kh)))
+            if (const char* clip = ImGui::GetClipboardText())
+                for (const char* c = clip; *c; c++)
+                    if ((unsigned char)*c >= 32) typed += *c;
+        ImGui::SameLine();
+        done = InkButton("Done", ImVec2(wide, kh), kInk);
+
+        // the controller's shortcuts, and a real keyboard
+        unsigned pr = pad_Pressed();
+        if (pr & PAD_X) del = true;
+        if (pr & PAD_Y) k.shift = !k.shift;
+        if (pr & PAD_START) done = true;
+        if (!appearing) {
+            if (pr & PAD_B) cancel = true;
+            for (ImWchar c : io.InputQueueCharacters)
+                if (c >= 32 && c < 127) typed += char(c);
+            if (ImGui::IsKeyPressed(ImGuiKey_Backspace)) del = true;
+            if (ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false)) done = true;
+            if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) cancel = true;
+            if (ImGui::IsKeyPressed(ImGuiKey_V, false) && io.KeyCtrl)
+                if (const char* clip = ImGui::GetClipboardText())
+                    for (const char* c = clip; *c; c++)
+                        if ((unsigned char)*c >= 32) typed += *c;
+        }
+        if (del && !k.text.empty()) k.text.pop_back();
+        k.text += typed;
+        if (k.text.size() > 250) k.text.resize(250);
+        if (done && k.target) {
+            *k.target = k.text;
+            games_Save();
+        }
+        if (done || cancel) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+    ImGui::PopStyleVar(3);
+}
+
 std::string BuildLine(int i, ImU32& mark) {
     const GameState& s = games_State(i);
     if (!s.installed) {
@@ -642,13 +960,9 @@ void DrawPlayTab(int i, float sc) {
     FocusHere(true);
     if (RuleButton("Use another folder...")) {
         std::wstring dir;
-        if (PickFile(dir, true, L"Choose the folder with the game's exe (or an empty folder to install into)")) {
-            s.folder = dir;
-            s.custom_folder = true;
-            games_Save();
-            games_Refresh(i);
-            Say(s.installed ? "Found the game there." : "No build there yet: installing will put it in that folder.", false);
-        }
+        if (PadMode()) OpenBrowser(i, true);
+        else if (PickFile(dir, true, L"Choose the folder with the game's exe (or an empty folder to install into)"))
+            UseFolder(i, dir);
     }
     if (s.custom_folder) {
         ImGui::SameLine();
@@ -663,11 +977,9 @@ void DrawPlayTab(int i, float sc) {
     Heading("Disc");
     if (RuleButton("Add disc image or folder...", ImVec2(0, 0), !s.running)) {
         std::wstring src;
-        if (PickFile(src, false, L"Choose your disc image (.iso), or default.xbe in an extracted game folder")) {
-            std::string err;
-            if (!games_StartImport(i, src, err)) Say(err, true);
-            else Say("", false);
-        }
+        if (PadMode()) OpenBrowser(i, false);
+        else if (PickFile(src, false, L"Choose your disc image (.iso), or default.xbe in an extracted game folder"))
+            UseDisc(i, src);
     }
     ImGui::SameLine();
     bool listed = s.has_disc && s.disc >= 0 && !s.wrong_game;
@@ -712,9 +1024,22 @@ void DrawArchipelagoTab(int i, float sc) {
         ImGui::TextUnformatted(label);
         ImGui::SameLine(lw);
         ImGui::SetNextItemWidth(fw);
-        snprintf(buf, sizeof buf, "%s", v.c_str());
         ImGui::PushID(label);
-        if (ImGui::InputText("##f", buf, sizeof buf, flags)) { v = buf; changed = true; }
+        if (PadMode()) {  // no keyboard to hand: the field is a button that opens the on-screen keyboard
+            bool password = flags & ImGuiInputTextFlags_Password;
+            std::string shown = v.empty() ? "(empty)" : password ? std::string(v.size(), '*') : v;
+            ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
+            ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_FrameBg));
+            ImGui::PushStyleColor(ImGuiCol_Text, V(v.empty() ? kInkFaint : kInk));
+            ImGui::BeginDisabled(!live);
+            if (ImGui::Button((shown + "##f").c_str(), ImVec2(fw, 0))) OpenKeyboard(v, label, password);
+            ImGui::EndDisabled();
+            ImGui::PopStyleColor(2);
+            ImGui::PopStyleVar();
+        } else {
+            snprintf(buf, sizeof buf, "%s", v.c_str());
+            if (ImGui::InputText("##f", buf, sizeof buf, flags)) { v = buf; changed = true; }
+        }
         ImGui::PopID();
     };
     field("Server", s.ap_server, 0);
@@ -924,7 +1249,17 @@ void DrawHints(ImDrawList* dl, ImVec2 a, ImVec2 b, float sc) {
     Hint hints[7];
     int n = 0;
     bool game = g_sel < games_Count();
-    if (g_ui_holds_back) {
+    if (g_keys.shown) {
+        hints[n++] = {G_A, "Type"};
+        hints[n++] = {G_X, "Delete"};
+        hints[n++] = {G_Y, "Shift"};
+        hints[n++] = {G_START, "Done"};
+        hints[n++] = {G_B, "Cancel"};
+    } else if (g_browse.shown) {
+        hints[n++] = {G_A, "Open"};
+        hints[n++] = {G_B, g_browse.dir.empty() ? "Cancel" : "Up a level"};
+        if (g_browse.folder && !g_browse.dir.empty()) hints[n++] = {G_Y, "Choose this folder"};
+    } else if (g_ui_holds_back) {
         hints[n++] = {G_A, "Select"};
         hints[n++] = {G_B, "Back"};
     } else if (g_zone == ZONE_SHELF) {
@@ -1049,6 +1384,8 @@ void DrawFrame(float sc) {
     g_focus_page = false;  // nothing on the page could take it (a job of another game's running): don't keep asking
     if (foot > 0) DrawHints(dl, ImVec2(pa.x, page_end.y), pb, sc);
     DrawQuitQuestion(sc);
+    DrawBrowser(sc);
+    DrawKeyboard(sc);
     PopPaperStyle();
     g_ui_holds_back = ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId) || ImGui::IsAnyItemActive();
     if (g_couch && g_nav_shown) ImGui::SetMouseCursor(ImGuiMouseCursor_None);  // no arrow over a TV while the pad drives
