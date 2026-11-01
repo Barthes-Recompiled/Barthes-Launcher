@@ -27,7 +27,14 @@ The games stand as books on a shelf. Pick one and its page lets you:
 
 ![The Play page](docs/screenshots/play.png)
 
-You need your own copy of the games. Nothing from the games is included here or in any release.
+The three ports, started from the launcher:
+
+| Philosopher's Stone | Chamber of Secrets | Prisoner of Azkaban (beta) |
+|---|---|---|
+| ![Philosopher's Stone, main menu](https://github.com/Barthes-Recompiled/Barthes-Launcher/releases/download/v1.1.0/screenshot-hp1.png) | ![Chamber of Secrets, main menu](https://github.com/Barthes-Recompiled/Barthes-Launcher/releases/download/v1.1.0/screenshot-hp2.png) | ![Prisoner of Azkaban, title screen](https://github.com/Barthes-Recompiled/Barthes-Launcher/releases/download/v1.1.0/screenshot-hp3.png) |
+
+You need your own copy of the games. No game data is included here or in any release (the screenshots above are
+hosted with the release, not kept in this repository).
 
 ## Setting up
 
