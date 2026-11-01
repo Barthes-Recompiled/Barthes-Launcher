@@ -8,7 +8,7 @@ One home for the Barthes Recompiled ports of the original Xbox Harry Potter game
 | II | Harry Potter and the Chamber of Secrets | [HP2-Recompiled](https://github.com/Barthes-Recompiled/HP2-Recompiled) | 1.0.2: playable, Archipelago coming soon |
 | III | Harry Potter and the Prisoner of Azkaban | [HP3-Recompiled](https://github.com/Barthes-Recompiled/HP3-Recompiled) | 0.5.2 Beta, Archipelago coming soon |
 
-**Current release: 1.0.2.**
+**Current release: 1.1.0.**
 
 The games stand as books on a shelf. Pick one and its page lets you:
 
@@ -59,6 +59,29 @@ own, or from a shortcut, without the launcher.
 
 **Requirements:** Windows 10 (1809) or later, 64-bit. The launcher uses only what Windows ships (WinHTTP, `tar.exe`
 for the release zips, Direct3D 11). The games need a DirectX 12 graphics card; see each port's README.
+
+## Controller
+
+The launcher works with an Xbox-style controller (any pad Windows or Steam Input presents as one). On the shelf,
+left and right pull out the books, **A** opens a book's page and **B** asks whether to quit. On a page, the d-pad moves
+between the controls, **A** presses one, **B** goes back to the shelf, **LB**/**RB** switch between Play and
+Archipelago, **Menu** plays the game and **Y** opens its settings. The arrow keys, Enter and Esc do the same. A bar along
+the bottom shows what the buttons do; the Colophon can label them as on a PlayStation or Nintendo controller, or hide
+the bar. The launcher ignores the controller while a game (or any other window) is in front. With the controller in
+hand (or in couch mode) the disc and folder buttons open the launcher's own file browser instead of the Windows
+dialog, and the Archipelago fields open an on-screen keyboard (a real keyboard types into it too, and Paste takes a
+room address from the clipboard).
+
+**Couch mode** fills the screen and scales the shelf and pages up for a TV. It comes on with `--couch`, by itself when
+Steam's Big Picture (or a Steam Deck's Game Mode) starts the launcher, or from the Colophon; **View** or F11 switches at
+any time. In couch mode **Play** minimizes the launcher and waits for the game, then brings it back with the focus on
+Play, so a front end that started the launcher (Quiver, Steam) sees one session from start to quit. **B** on the shelf
+quits.
+
+To add the launcher to [Quiver](https://github.com/tgeorgiadis/quiver-launcher) or Steam, point the entry at
+`barthes_launcher.exe` and give it `--couch` as its launch options. For an entry that is one game, use
+`--page hp1 --play --couch --quit-after-game` (`hp2`, `hp3` for the others): the launcher checks the game, starts it
+and closes when it does. `--window` starts in a window even where couch mode would come on.
 
 ## Archipelago
 
