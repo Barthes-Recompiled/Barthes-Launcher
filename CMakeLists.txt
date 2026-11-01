@@ -4,7 +4,7 @@
 cmake_minimum_required(VERSION 3.20)
 project(barthes_launcher C CXX)
 
-set(BARTHES_VERSION "1.0.2" CACHE STRING "The launcher's version, shown in its colophon and its file properties")
+set(BARTHES_VERSION "1.1.0" CACHE STRING "The launcher's version, shown in its colophon and its file properties")
 string(REGEX MATCHALL "[0-9]+" _v "${BARTHES_VERSION}.0.0.0")
 list(GET _v 0 V0)
 list(GET _v 1 V1)
