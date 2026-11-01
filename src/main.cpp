@@ -26,6 +26,7 @@
 #include <backends/imgui_impl_win32.h>
 
 #include "games.h"
+#include "pad.h"
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND, UINT, WPARAM, LPARAM);
 
@@ -111,6 +112,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     case WM_ACTIVATE:
         if (LOWORD(wp) != WA_INACTIVE) g_refresh = true;
+        pad_Hold();  // coming or going, what's held now belongs to the other window
         break;
     case WM_GETMINMAXINFO: {
         UINT dpi = GetDpiForWindow(hwnd);
@@ -196,8 +198,9 @@ void PushPaperStyle() {
     ImGui::PushStyleColor(ImGuiCol_HeaderActive, V(Rgb(220, 208, 186)));
     ImGui::PushStyleColor(ImGuiCol_PlotHistogram, V(kInk));
     ImGui::PushStyleColor(ImGuiCol_TextSelectedBg, V(Rgb(214, 196, 160)));
+    ImGui::PushStyleColor(ImGuiCol_NavHighlight, V(kInk));  // the controller's focus: an ink frame
 }
-void PopPaperStyle() { ImGui::PopStyleColor(13); }
+void PopPaperStyle() { ImGui::PopStyleColor(14); }
 
 // the main action on a page: solid in the game's binding colour
 bool InkButton(const char* label, ImVec2 size, ImU32 color, bool enabled = true) {
@@ -261,20 +264,37 @@ void Heading(const char* text) {
     ImGui::PopFont();
 }
 
+// ── where the controller is ──────────────────────────────────────────────────────────────────────────────────────
+// Two places: the shelf, where left and right pull out the books (ImGui's navigation sleeps), and the page, where
+// ImGui's navigation moves between the controls. A goes from the shelf into the page, B back out.
+enum Zone { ZONE_SHELF, ZONE_PAGE };
+int g_zone = ZONE_PAGE;
+bool g_focus_page = true;      // the page's first usable control (Play, if it can) takes the focus this frame
+bool g_nav_shown = false;      // the controller or the keys were used last, not the mouse: focus marks show
+bool g_ui_holds_back = false;  // last frame a dropdown, the quit question or a text field had B and Esc for itself
+bool g_quit_ask = false;
+
+// call before a control: it takes the focus if the page wants it placed and this control can be used
+void FocusHere(bool usable) {
+    if (g_focus_page && usable) {
+        ImGui::SetKeyboardFocusHere();
+        g_focus_page = false;
+    }
+}
+
 void OpenUrl(const char* url) { ShellExecuteA(nullptr, "open", url, nullptr, nullptr, SW_SHOWNORMAL); }
 
+// a link: underlined under the mouse or the controller's focus, opened by a click or A
 bool Link(const char* label, const char* url) {
-    ImGui::PushStyleColor(ImGuiCol_Text, V(Rgb(70, 60, 120)));
-    ImGui::TextUnformatted(label);
-    ImGui::PopStyleColor();
-    bool hovered = ImGui::IsItemHovered();
-    if (hovered) {
-        ImVec2 a = ImGui::GetItemRectMin(), b = ImGui::GetItemRectMax();
-        ImGui::GetWindowDrawList()->AddLine(ImVec2(a.x, b.y), b, Rgb(70, 60, 120), 1.0f);
-        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-    }
-    if (hovered && ImGui::IsMouseClicked(0)) { OpenUrl(url); return true; }
-    return false;
+    ImVec2 p = ImGui::GetCursorScreenPos(), ts = ImGui::CalcTextSize(label);
+    bool pressed = ImGui::InvisibleButton(label, ts);
+    bool hovered = ImGui::IsItemHovered(), focused = ImGui::IsItemFocused() && g_nav_shown;
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    dl->AddText(p, Rgb(70, 60, 120), label);
+    if (hovered || focused) dl->AddLine(ImVec2(p.x, p.y + ts.y), ImVec2(p.x + ts.x, p.y + ts.y), Rgb(70, 60, 120), focused ? 2.0f : 1.0f);
+    if (hovered) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+    if (pressed) OpenUrl(url);
+    return pressed;
 }
 
 // ── file pickers ────────────────────────────────────────────────────────────────────────────────────────────────
@@ -326,6 +346,36 @@ void Say(const std::string& m, bool bad) {
     g_message_bad = bad;
 }
 
+void SelectBook(int i) {
+    g_sel = i;
+    g_tab = 0;
+    g_message.clear();
+    if (i < games_Count()) games_Refresh(i);
+}
+
+bool CanPlay(int i) {
+    const GameState& s = games_State(i);
+    return i < games_Count() && !games_Job().running && s.installed && !s.running && !s.wrong_game && s.has_disc;
+}
+
+bool CanOpenSettings(int i) {
+    const GameState& s = games_State(i);
+    return i < games_Count() && !games_Job().running && s.installed && !s.running;
+}
+
+// Play (settings=false) or Game settings
+void StartGame(int i, bool settings) {
+    std::string err;
+    if (!games_Play(i, settings, err)) {
+        Say(err, true);
+        return;
+    }
+    if (settings) return;
+    Say("", false);
+    if (games_AfterStart() == AFTER_CLOSE) PostQuitMessage(0);
+    else if (games_AfterStart() == AFTER_MINIMIZE) ShowWindow(g_hwnd, SW_MINIMIZE);
+}
+
 void DrawShelf(ImDrawList* dl, ImVec2 a, ImVec2 b, float sc) {
     dl->AddRectFilled(a, b, kShelf);
     // the launcher's name across the top of the shelf
@@ -350,12 +400,12 @@ void DrawShelf(ImDrawList* dl, ImVec2 a, ImVec2 b, float sc) {
         ImVec2 p0(x, floor_y - h - lift), p1(x + w, floor_y - lift);
         ImGui::SetCursorScreenPos(p0);
         ImGui::PushID(i);
+        ImGui::PushItemFlag(ImGuiItemFlags_NoNav, true);  // the controller moves along the shelf by itself (HandleActions)
         if (ImGui::InvisibleButton("book", ImVec2(w, h))) {
-            g_sel = i;
-            g_tab = 0;
-            g_message.clear();
-            if (!colophon) games_Refresh(i);
+            SelectBook(i);
+            g_zone = ZONE_SHELF;
         }
+        ImGui::PopItemFlag();
         bool hov = ImGui::IsItemHovered();
         ImGui::PopID();
         ImU32 cloth = colophon ? Rgb(196, 186, 164) : Binding(games_Info(i).hue, hov ? 0.52f : 0.46f);
@@ -363,6 +413,9 @@ void DrawShelf(ImDrawList* dl, ImVec2 a, ImVec2 b, float sc) {
         ImU32 letter = colophon ? Rgb(60, 52, 44) : Rgb(236, 222, 190);
         dl->AddRectFilled(ImVec2(p0.x + 3 * sc, p0.y + 3 * sc), ImVec2(p1.x + 3 * sc, p1.y), Rgb(0, 0, 0, 70), 3 * sc);
         dl->AddRectFilled(p0, p1, cloth, 3 * sc);
+        // the controller on the shelf: a thin gilt line round the book pulled out
+        if (g_zone == ZONE_SHELF && g_nav_shown && g_sel == i)
+            dl->AddRect(ImVec2(p0.x - 4 * sc, p0.y - 4 * sc), ImVec2(p1.x + 4 * sc, p1.y + 4 * sc), Rgb(214, 190, 130), 5 * sc, 0, 2 * sc);
         // head and tail bands, and a faint highlight down the spine's curve
         dl->AddRectFilled(ImVec2(p0.x, p0.y + 14 * sc), ImVec2(p1.x, p0.y + 18 * sc), band);
         dl->AddRectFilled(ImVec2(p0.x, p1.y - 18 * sc), ImVec2(p1.x, p1.y - 14 * sc), band);
@@ -454,6 +507,7 @@ void DrawJob(float sc, ImU32 accent) {
         dl->AddRectFilled(ImVec2(p.x + w * t * 0.8f, p.y), ImVec2(p.x + w * (t * 0.8f + 0.2f), p.y + h), accent, h);
     }
     ImGui::Dummy(ImVec2(w, h + 8 * sc));
+    FocusHere(true);
     if (RuleButton("Cancel", ImVec2(120 * sc, 0))) games_CancelJob();
     if (j.finished) {
         Say(j.result.empty() ? (j.ok ? "Done." : "Stopped.") : j.result, !j.ok);
@@ -489,21 +543,13 @@ void DrawPlayTab(int i, float sc) {
     float bw = 200 * sc, bh = 46 * sc;
     if (s.running) {
         InkButton("Playing...", ImVec2(bw, bh), accent, false);
-    } else if (InkButton("Play", ImVec2(bw, bh), accent, can_play)) {
-        std::string err;
-        if (games_Play(i, false, err)) {
-            Say("", false);
-            if (games_AfterStart() == AFTER_CLOSE) PostQuitMessage(0);
-            else if (games_AfterStart() == AFTER_MINIMIZE) ShowWindow(g_hwnd, SW_MINIMIZE);
-        } else {
-            Say(err, true);
-        }
+    } else {
+        FocusHere(can_play);
+        if (InkButton("Play", ImVec2(bw, bh), accent, can_play)) StartGame(i, false);
     }
     ImGui::SameLine(0, 12 * sc);
-    if (RuleButton("Game settings", ImVec2(160 * sc, bh), s.installed && !s.running)) {
-        std::string err;
-        if (!games_Play(i, true, err)) Say(err, true);
-    }
+    FocusHere(s.installed && !s.running);
+    if (RuleButton("Game settings", ImVec2(160 * sc, bh), s.installed && !s.running)) StartGame(i, true);
     if (!can_play && !s.running) {
         ImGui::PushStyleColor(ImGuiCol_Text, V(kInkSoft));
         if (!g.playable && !s.installed) ImGui::TextWrapped("This port is still being built. It will appear here once it boots.");
@@ -529,11 +575,13 @@ void DrawPlayTab(int i, float sc) {
         char buf[96];
         snprintf(buf, sizeof buf, label, s.release.tag.c_str());
         bool primary = !s.installed || games_UpdateAvailable(i) || mismatch;
+        FocusHere(!s.running);
         if (primary ? InkButton(buf, ImVec2(0, 0), accent, !s.running) : RuleButton(buf, ImVec2(0, 0), !s.running)) {
             if (!games_StartInstall(i)) Say("Could not start the install.", true);
         }
         ImGui::SameLine();
     }
+    FocusHere(true);
     if (RuleButton("Use another folder...")) {
         std::wstring dir;
         if (PickFile(dir, true, L"Choose the folder with the game's exe (or an empty folder to install into)")) {
@@ -597,6 +645,7 @@ void DrawArchipelagoTab(int i, float sc) {
     bool changed = false;
     char buf[256];
     ImGui::BeginDisabled(!live);
+    FocusHere(live);
     if (ImGui::Checkbox("Play this game in an Archipelago multiworld", &s.ap_enabled)) changed = true;
     ImGui::EndDisabled();
     ImGui::Dummy(ImVec2(0, 4 * sc));
@@ -637,6 +686,7 @@ void DrawArchipelagoTab(int i, float sc) {
         snprintf(url, sizeof url, "https://github.com/%s", g.project);
         Link(url, url);
     }
+    FocusHere(true);  // nothing above to start on (the fields would start typing)
     Link("archipelago.gg", "https://archipelago.gg");
 }
 
@@ -650,7 +700,7 @@ void DrawGamePage(int i, ImVec2 a, ImVec2 b, float sc) {
                           ImVec2(a.x + 34 * sc, a.y + 64 * sc), kPaper);
 
     ImGui::SetCursorScreenPos(ImVec2(a.x + 60 * sc, a.y + 30 * sc));
-    ImGui::BeginChild("page", ImVec2(b.x - a.x - 100 * sc, b.y - a.y - 50 * sc), ImGuiChildFlags_None,
+    ImGui::BeginChild("page", ImVec2(b.x - a.x - 100 * sc, b.y - a.y - 50 * sc), ImGuiChildFlags_NavFlattened,
                       ImGuiWindowFlags_NoBackground);
     ImGui::PushFont(g_small);
     ImGui::PushStyleColor(ImGuiCol_Text, V(kInkSoft));
@@ -674,11 +724,14 @@ void DrawGamePage(int i, ImVec2 a, ImVec2 b, float sc) {
     for (int t = 0; t < 2; t++) {
         if (t) ImGui::SameLine(0, 26 * sc);
         ImGui::PushStyleColor(ImGuiCol_Text, V(g_tab == t ? kInk : kInkFaint));
-        ImGui::TextUnformatted(tabs[t]);
-        ImGui::PopStyleColor();
+        for (ImGuiCol c : {ImGuiCol_Header, ImGuiCol_HeaderHovered, ImGuiCol_HeaderActive})
+            ImGui::PushStyleColor(c, ImVec4(0, 0, 0, 0));
+        ImGui::PushID(t);
+        if (ImGui::Selectable(tabs[t], false, ImGuiSelectableFlags_None, ImGui::CalcTextSize(tabs[t]))) g_tab = t;
+        ImGui::PopID();
+        ImGui::PopStyleColor(4);
         ImVec2 ra = ImGui::GetItemRectMin(), rb = ImGui::GetItemRectMax();
         if (ImGui::IsItemHovered()) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-        if (ImGui::IsItemClicked()) g_tab = t;
         if (g_tab == t) dl->AddRectFilled(ImVec2(ra.x, rb.y + 3 * sc), ImVec2(rb.x, rb.y + 5 * sc), accent);
     }
     Rule(sc);
@@ -690,7 +743,7 @@ void DrawGamePage(int i, ImVec2 a, ImVec2 b, float sc) {
 
 void DrawColophon(ImVec2 a, ImVec2 b, float sc) {
     ImGui::SetCursorScreenPos(ImVec2(a.x + 60 * sc, a.y + 30 * sc));
-    ImGui::BeginChild("colophon", ImVec2(b.x - a.x - 100 * sc, b.y - a.y - 50 * sc), ImGuiChildFlags_None,
+    ImGui::BeginChild("colophon", ImVec2(b.x - a.x - 100 * sc, b.y - a.y - 50 * sc), ImGuiChildFlags_NavFlattened,
                       ImGuiWindowFlags_NoBackground);
     ImGui::PushFont(g_small);
     ImGui::PushStyleColor(ImGuiCol_Text, V(kInkSoft));
@@ -725,7 +778,15 @@ void DrawColophon(ImVec2 a, ImVec2 b, float sc) {
     ImGui::SameLine(200 * sc);
     const char* after[] = {"Minimize the launcher", "Close the launcher", "Keep the launcher open"};
     ImGui::SetNextItemWidth(260 * sc);
+    FocusHere(true);
     if (ImGui::Combo("##after", &games_AfterStart(), after, 3)) games_Save();
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Controller buttons");
+    ImGui::SameLine(200 * sc);
+    const char* labels[] = {"Xbox (A B X Y)", "PlayStation (cross circle)", "Nintendo (B A Y X)"};
+    ImGui::SetNextItemWidth(260 * sc);
+    if (ImGui::Combo("##labels", &games_PadLabels(), labels, 3)) games_Save();
+    if (ImGui::Checkbox("Show what the controller's buttons do along the bottom", &games_PadHints())) games_Save();
     if (RuleButton("Check for game updates")) {
         games_CheckReleasesAsync();
         Say("Checking GitHub...", false);
@@ -735,6 +796,164 @@ void DrawColophon(ImVec2 a, ImVec2 b, float sc) {
     ImGui::Dummy(ImVec2(0, 8 * sc));
     Link("github.com/Barthes-Recompiled", "https://github.com/Barthes-Recompiled");
     ImGui::EndChild();
+}
+
+// ── the controller's hints, along the foot of the page ─────────────────────────────────────────────────────────
+
+enum Glyph { G_A, G_B, G_X, G_Y, G_SHOULDERS, G_START, G_LEFT_RIGHT };
+
+bool HintsShown() { return pad_Connected() && games_PadHints(); }
+
+// one button as the chosen controller labels it: face buttons as ink discs, the rest as ink pills
+float DrawGlyph(ImDrawList* dl, Glyph g, ImVec2 p, float h, float sc) {
+    int kind = games_PadLabels();
+    ImFont* f = g_small;
+    auto pill = [&](const char* text) {
+        ImVec2 ts = f->CalcTextSizeA(f->FontSize, FLT_MAX, 0, text);
+        float w = std::max(h, ts.x + h * 0.7f);
+        dl->AddRectFilled(p, ImVec2(p.x + w, p.y + h), kInk, h * 0.5f);
+        dl->AddText(f, f->FontSize, ImVec2(p.x + (w - ts.x) * 0.5f, p.y + (h - ts.y) * 0.5f), kPaper, text);
+        return w;
+    };
+    if (g == G_SHOULDERS) {
+        const char* l = kind == LABELS_PLAYSTATION ? "L1" : kind == LABELS_NINTENDO ? "L" : "LB";
+        const char* r = kind == LABELS_PLAYSTATION ? "R1" : kind == LABELS_NINTENDO ? "R" : "RB";
+        float w = pill(l) + 4 * sc;
+        p.x += w;
+        return w + pill(r);
+    }
+    if (g == G_START) return pill(kind == LABELS_PLAYSTATION ? "Options" : kind == LABELS_NINTENDO ? "+" : "Menu");
+    if (g == G_LEFT_RIGHT) {  // the d-pad's left and right, as two small arrows
+        float w = h * 1.5f, r = h * 0.22f;
+        dl->AddRectFilled(p, ImVec2(p.x + w, p.y + h), kInk, h * 0.5f);
+        ImVec2 c(p.x + w * 0.5f, p.y + h * 0.5f);
+        dl->AddTriangleFilled(ImVec2(c.x - w * 0.36f, c.y), ImVec2(c.x - w * 0.36f + r * 1.3f, c.y - r), ImVec2(c.x - w * 0.36f + r * 1.3f, c.y + r), kPaper);
+        dl->AddTriangleFilled(ImVec2(c.x + w * 0.36f, c.y), ImVec2(c.x + w * 0.36f - r * 1.3f, c.y + r), ImVec2(c.x + w * 0.36f - r * 1.3f, c.y - r), kPaper);
+        return w;
+    }
+    ImVec2 c(p.x + h * 0.5f, p.y + h * 0.5f);
+    dl->AddCircleFilled(c, h * 0.5f, kInk);
+    if (kind == LABELS_PLAYSTATION) {  // drawn, not from a font: cross, circle, square, triangle
+        float r = h * 0.22f, t = 1.6f * sc;
+        if (g == G_A) {
+            dl->AddLine(ImVec2(c.x - r, c.y - r), ImVec2(c.x + r, c.y + r), kPaper, t);
+            dl->AddLine(ImVec2(c.x - r, c.y + r), ImVec2(c.x + r, c.y - r), kPaper, t);
+        } else if (g == G_B) {
+            dl->AddCircle(c, r * 1.1f, kPaper, 0, t);
+        } else if (g == G_X) {
+            dl->AddRect(ImVec2(c.x - r, c.y - r), ImVec2(c.x + r, c.y + r), kPaper, 0, 0, t);
+        } else {
+            dl->AddTriangle(ImVec2(c.x, c.y - r * 1.2f), ImVec2(c.x + r * 1.2f, c.y + r * 0.9f), ImVec2(c.x - r * 1.2f, c.y + r * 0.9f), kPaper, t);
+        }
+        return h;
+    }
+    // by place: Nintendo's bottom button says B, its right one A, its left Y, its top X
+    static const char* const xbox[] = {"A", "B", "X", "Y"};
+    static const char* const nintendo[] = {"B", "A", "Y", "X"};
+    const char* text = (kind == LABELS_NINTENDO ? nintendo : xbox)[g];
+    ImVec2 ts = f->CalcTextSizeA(f->FontSize, FLT_MAX, 0, text);
+    dl->AddText(f, f->FontSize, ImVec2(c.x - ts.x * 0.5f, c.y - ts.y * 0.5f), kPaper, text);
+    return h;
+}
+
+void DrawHints(ImDrawList* dl, ImVec2 a, ImVec2 b, float sc) {
+    struct Hint { Glyph g; const char* does; };
+    Hint hints[6];
+    int n = 0;
+    bool game = g_sel < games_Count();
+    if (g_ui_holds_back) {
+        hints[n++] = {G_A, "Select"};
+        hints[n++] = {G_B, "Back"};
+    } else if (g_zone == ZONE_SHELF) {
+        hints[n++] = {G_LEFT_RIGHT, "Choose a book"};
+        hints[n++] = {G_A, "Open"};
+        hints[n++] = {G_B, "Quit"};
+        if (CanPlay(g_sel)) hints[n++] = {G_START, "Play"};
+    } else {
+        hints[n++] = {G_A, "Select"};
+        hints[n++] = {G_B, "Shelf"};
+        if (game) hints[n++] = {G_SHOULDERS, "Play / Archipelago"};
+        if (CanPlay(g_sel)) hints[n++] = {G_START, "Play"};
+        if (CanOpenSettings(g_sel)) hints[n++] = {G_Y, "Game settings"};
+    }
+    dl->AddLine(ImVec2(a.x + 60 * sc, a.y), ImVec2(b.x - 40 * sc, a.y), kPaperEdge, 1.0f * sc);
+    float h = 24 * sc, x = a.x + 60 * sc, y = (a.y + b.y - h) * 0.5f;
+    for (int k = 0; k < n; k++) {
+        x += DrawGlyph(dl, hints[k].g, ImVec2(x, y), h, sc) + 8 * sc;
+        ImVec2 ts = g_small->CalcTextSizeA(g_small->FontSize, FLT_MAX, 0, hints[k].does);
+        dl->AddText(g_small, g_small->FontSize, ImVec2(x, y + (h - ts.y) * 0.5f), kInkSoft, hints[k].does);
+        x += ts.x + 24 * sc;
+    }
+}
+
+// B on the shelf: a small page over the launcher, Quit already chosen so B then A goes back to Quiver
+void DrawQuitQuestion(float sc) {
+    const char* name = "Quit Barthes Launcher?";
+    if (g_quit_ask) {
+        ImGui::OpenPopup(name);
+        g_quit_ask = false;
+    }
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(ImVec2(vp->Pos.x + vp->Size.x * 0.5f, vp->Pos.y + vp->Size.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(32 * sc, 26 * sc));
+    ImGui::PushStyleVar(ImGuiStyleVar_PopupBorderSize, 1.0f * sc);
+    if (ImGui::BeginPopupModal(name, nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove)) {
+        ImGui::PushFont(g_spine);
+        ImGui::TextUnformatted(name);
+        ImGui::PopFont();
+        ImGui::Dummy(ImVec2(0, 10 * sc));
+        bool appearing = ImGui::IsWindowAppearing();  // opened by this frame's B or Esc, which mustn't close it again
+        if (appearing) ImGui::SetKeyboardFocusHere();
+        if (InkButton("Quit", ImVec2(140 * sc, 40 * sc), kInk)) PostQuitMessage(0);
+        ImGui::SameLine(0, 12 * sc);
+        bool stay = RuleButton("Stay", ImVec2(140 * sc, 40 * sc));
+        if (stay || (!appearing && ((pad_Pressed() & PAD_B) || ImGui::IsKeyPressed(ImGuiKey_Escape, false))))
+            ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+    ImGui::PopStyleVar(2);
+}
+
+// What the controller's buttons (and the matching keys) do outside ImGui's own navigation: moving along the shelf,
+// going into the page and back out, the tabs, Play and Game settings.
+void HandleActions() {
+    ImGuiIO& io = ImGui::GetIO();
+    unsigned pr = pad_Pressed();
+    bool typing = io.WantTextInput;
+    auto key = [&](ImGuiKey k) { return !typing && ImGui::IsKeyPressed(k, false); };
+    bool kb_left = key(ImGuiKey_LeftArrow) || key(ImGuiKey_UpArrow), kb_right = key(ImGuiKey_RightArrow) || key(ImGuiKey_DownArrow);
+    bool kb_enter = key(ImGuiKey_Enter) || key(ImGuiKey_KeypadEnter), kb_esc = key(ImGuiKey_Escape);
+    if (pr || kb_left || kb_right || kb_enter || kb_esc || key(ImGuiKey_Tab)) {
+        g_nav_shown = true;
+    } else if (io.MouseDelta.x != 0 || io.MouseDelta.y != 0 || ImGui::IsMouseClicked(0)) {
+        g_nav_shown = false;
+    }
+    if (ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId)) return;  // the quit question or a dropdown has the buttons
+
+    bool back = (pr & PAD_B) || kb_esc;
+    if (g_zone == ZONE_SHELF) {
+        int last = games_Count();  // the colophon
+        if (((pr & (PAD_LEFT | PAD_UP)) || kb_left) && g_sel > 0) SelectBook(g_sel - 1);
+        if (((pr & (PAD_RIGHT | PAD_DOWN)) || kb_right) && g_sel < last) SelectBook(g_sel + 1);
+        if ((pr & PAD_A) || kb_enter) {
+            g_zone = ZONE_PAGE;
+            g_focus_page = true;
+        } else if (back) {
+            g_quit_ask = true;
+        }
+    } else if (back && !g_ui_holds_back) {
+        g_zone = ZONE_SHELF;
+        ImGui::SetWindowFocus(nullptr);  // ImGui's navigation sleeps while the shelf has the controller
+    }
+    if (g_sel < games_Count()) {
+        int tab = (pr & PAD_LB) ? 0 : (pr & PAD_RB) ? 1 : g_tab;
+        if (tab != g_tab) {
+            g_tab = tab;
+            if (g_zone == ZONE_PAGE) g_focus_page = true;
+        }
+        if ((pr & PAD_START) && CanPlay(g_sel)) StartGame(g_sel, false);
+        else if ((pr & PAD_Y) && CanOpenSettings(g_sel)) StartGame(g_sel, true);
+    }
 }
 
 void DrawFrame(float sc) {
@@ -755,10 +974,18 @@ void DrawFrame(float sc) {
     dl->AddRectFilled(pa, pb, kPaper);
     // the gutter: a soft shadow where the page meets the shelf
     dl->AddRectFilledMultiColor(pa, ImVec2(pa.x + 18 * sc, pb.y), Rgb(0, 0, 0, 60), Rgb(0, 0, 0, 0), Rgb(0, 0, 0, 0), Rgb(0, 0, 0, 60));
+    // a click on the page takes the controller there too, as one on a book takes it to the shelf
+    if (ImGui::IsMouseClicked(0) && ImGui::GetIO().MousePos.x >= pa.x) g_zone = ZONE_PAGE;
+    float foot = HintsShown() ? 46 * sc : 0;
     PushPaperStyle();
-    if (g_sel < games_Count()) DrawGamePage(g_sel, pa, pb, sc);
-    else DrawColophon(pa, pb, sc);
+    ImVec2 page_end(pb.x, pb.y - foot);
+    if (g_sel < games_Count()) DrawGamePage(g_sel, pa, page_end, sc);
+    else DrawColophon(pa, page_end, sc);
+    g_focus_page = false;  // nothing on the page could take it (a job of another game's running): don't keep asking
+    if (foot > 0) DrawHints(dl, ImVec2(pa.x, page_end.y), pb, sc);
+    DrawQuitQuestion(sc);
     PopPaperStyle();
+    g_ui_holds_back = ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId) || ImGui::IsAnyItemActive();
     ImGui::End();
 }
 
@@ -819,6 +1046,10 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE, LPSTR, int show) {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGui::GetIO().IniFilename = nullptr;
+    // the controller and the arrow keys move the focus; pad.cpp reads the controller (not the Win32 backend, which
+    // would read it while a game is in front too)
+    ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad | ImGuiConfigFlags_NavEnableKeyboard;
+    pad_Init();
     sc = GetDpiForWindow(g_hwnd) / 96.0f;
     ApplyStyle(sc);
     LoadFonts(sc);
@@ -856,7 +1087,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE, LPSTR, int show) {
     }
     if (argv) LocalFree(argv);
 
-    bool done = false;
+    bool done = false, first_frame = true;
     while (!done) {
         MSG msg;
         while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
@@ -888,7 +1119,18 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE, LPSTR, int show) {
         }
         ImGui_ImplDX11_NewFrame();
         ImGui_ImplWin32_NewFrame();
+        pad_Update(GetForegroundWindow() == g_hwnd);
+        pad_Feed(g_zone == ZONE_PAGE || g_ui_holds_back, g_ui_holds_back);
+        // ImGui only presses what its focus frame shows, so a controller shows the frame (from the first frame when one
+        // is connected, so a single A plays), and the mouse hides it again
+        if (pad_Pressed() || (first_frame && pad_Connected())) {
+            GImGui->NavDisableHighlight = false;
+            GImGui->NavDisableMouseHover = true;
+            g_nav_shown = true;
+        }
+        first_frame = false;
         ImGui::NewFrame();
+        HandleActions();
         DrawFrame(sc);
         ImGui::Render();
         const float clear[4] = {0, 0, 0, 1};

@@ -71,6 +71,9 @@ const char* games_DiscEdition(int i);  // "PAL" / "USA" for the disc in game\, o
 // launcher-wide settings
 enum AfterStart { AFTER_MINIMIZE, AFTER_CLOSE, AFTER_STAY };
 int& games_AfterStart();
+enum PadLabels { LABELS_XBOX, LABELS_PLAYSTATION, LABELS_NINTENDO };
+int& games_PadLabels();   // what the hint bar calls the controller's buttons (XInput can't tell which pad it is)
+bool& games_PadHints();   // the hint bar along the page's foot while a controller is connected
 
 // starts the game's own launcher; settings=true makes it show its settings page this time even if the player turned
 // that page off. FALSE with error when it could not.

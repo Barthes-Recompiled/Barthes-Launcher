@@ -60,6 +60,15 @@ own, or from a shortcut, without the launcher.
 **Requirements:** Windows 10 (1809) or later, 64-bit. The launcher uses only what Windows ships (WinHTTP, `tar.exe`
 for the release zips, Direct3D 11). The games need a DirectX 12 graphics card; see each port's README.
 
+## Controller
+
+The launcher works with an Xbox-style controller (any pad Windows or Steam Input presents as one). On the shelf,
+left and right pull out the books, **A** opens a book's page and **B** asks whether to quit. On a page, the d-pad moves
+between the controls, **A** presses one, **B** goes back to the shelf, **LB**/**RB** switch between Play and
+Archipelago, **Menu** plays the game and **Y** opens its settings. The arrow keys, Enter and Esc do the same. A bar along
+the bottom shows what the buttons do; the Colophon can label them as on a PlayStation or Nintendo controller, or hide
+the bar. The launcher ignores the controller while a game (or any other window) is in front.
+
 ## Archipelago
 
 Philosopher's Stone can be played in an [Archipelago](https://archipelago.gg) multiworld. On its **Archipelago** page,

@@ -19,6 +19,7 @@ set(IMGUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui")
 add_executable(barthes_launcher WIN32
     src/main.cpp
     src/games.cpp
+    src/pad.cpp      # the controller, read with XInput (main.cpp decides what reaches ImGui)
     src/net.cpp
     src/gamecheck.c  # which disc a folder or image holds; checks game\ against it (src/lists/*.inc)
     src/xiso.c       # unpacks a disc image into game\
@@ -27,7 +28,10 @@ add_executable(barthes_launcher WIN32
     ${IMGUI_DIR}/imgui_widgets.cpp ${IMGUI_DIR}/backends/imgui_impl_win32.cpp
     ${IMGUI_DIR}/backends/imgui_impl_dx11.cpp)
 target_include_directories(barthes_launcher PRIVATE ${IMGUI_DIR} src)
+# IMGUI_IMPL_WIN32_DISABLE_GAMEPAD: pad.cpp reads the controller instead, since the backend reads it even while a game
+# is in front
 target_compile_definitions(barthes_launcher PRIVATE BARTHES_VERSION="${BARTHES_VERSION}" UNICODE _UNICODE
+    IMGUI_IMPL_WIN32_DISABLE_GAMEPAD
     _WIN32_WINNT=0x0A00 WINVER=0x0A00)
 set_target_properties(barthes_launcher PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
 target_compile_options(barthes_launcher PRIVATE -O2)

@@ -32,6 +32,8 @@ constexpr int kCount = int(std::size(kGames));
 GameState g_state[kCount];
 std::string g_project[kCount];  // where releases come from: the game's project, or barthes.ini's release_project
 int g_after_start = AFTER_MINIMIZE;
+int g_pad_labels = LABELS_XBOX;
+bool g_pad_hints = true;
 Job g_job;
 HANDLE g_job_thread = nullptr;
 
@@ -439,6 +441,8 @@ int games_Count() { return kCount; }
 const GameInfo& games_Info(int i) { return kGames[i]; }
 GameState& games_State(int i) { return g_state[i]; }
 int& games_AfterStart() { return g_after_start; }
+int& games_PadLabels() { return g_pad_labels; }
+bool& games_PadHints() { return g_pad_hints; }
 Job& games_Job() { return g_job; }
 
 std::wstring games_ExeDir() {
@@ -451,6 +455,9 @@ std::wstring games_ExeDir() {
 void games_Load() {
     std::string after = IniGet("launcher", "after_start", "minimize");
     g_after_start = after == "close" ? AFTER_CLOSE : after == "stay" ? AFTER_STAY : AFTER_MINIMIZE;
+    std::string labels = IniGet("launcher", "pad_labels", "xbox");
+    g_pad_labels = labels == "playstation" ? LABELS_PLAYSTATION : labels == "nintendo" ? LABELS_NINTENDO : LABELS_XBOX;
+    g_pad_hints = IniGet("launcher", "pad_hints", "true") != "false";
     for (int i = 0; i < kCount; i++) {
         GameState& s = g_state[i];
         const char* id = kGames[i].id;
@@ -471,6 +478,9 @@ void games_Load() {
 void games_Save() {
     const char* after[] = {"minimize", "close", "stay"};
     IniSet("launcher", "after_start", after[g_after_start]);
+    const char* labels[] = {"xbox", "playstation", "nintendo"};
+    IniSet("launcher", "pad_labels", labels[g_pad_labels]);
+    IniSet("launcher", "pad_hints", g_pad_hints ? "true" : "false");
     for (int i = 0; i < kCount; i++) {
         GameState& s = g_state[i];
         const char* id = kGames[i].id;
