@@ -297,14 +297,15 @@ bool net_LatestRelease(const std::string& project, Release& r, std::string& erro
     return r.zip_url.size() > 0;
 }
 
-std::string net_Sha256File(const std::wstring& path, Transfer* t) {
+namespace {
+std::string HashFile(const std::wstring& path, LPCWSTR algorithm, ULONG size, Transfer* t) {
     HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN,
                            nullptr);
     if (f == INVALID_HANDLE_VALUE) return {};
     BCRYPT_ALG_HANDLE alg = nullptr;
     BCRYPT_HASH_HANDLE hash = nullptr;
     std::string out;
-    if (BCryptOpenAlgorithmProvider(&alg, BCRYPT_SHA256_ALGORITHM, nullptr, 0) == 0 &&
+    if (BCryptOpenAlgorithmProvider(&alg, algorithm, nullptr, 0) == 0 &&
         BCryptCreateHash(alg, &hash, nullptr, 0, nullptr, 0, 0) == 0) {
         std::unique_ptr<unsigned char[]> buf(new unsigned char[1 << 20]);
         DWORD got = 0;
@@ -314,9 +315,9 @@ std::string net_Sha256File(const std::wstring& path, Transfer* t) {
             if (t) InterlockedAdd64(&t->done, got);
         }
         unsigned char digest[32];
-        if (ok && BCryptFinishHash(hash, digest, 32, 0) == 0) {
+        if (ok && size <= sizeof digest && BCryptFinishHash(hash, digest, size, 0) == 0) {
             char hex[65];
-            for (int i = 0; i < 32; i++) snprintf(hex + i * 2, 3, "%02x", digest[i]);
+            for (ULONG i = 0; i < size; i++) snprintf(hex + i * 2, 3, "%02x", digest[i]);
             out = hex;
         }
     }
@@ -325,3 +326,8 @@ std::string net_Sha256File(const std::wstring& path, Transfer* t) {
     CloseHandle(f);
     return out;
 }
+}  // namespace
+
+std::string net_Sha256File(const std::wstring& path, Transfer* t) { return HashFile(path, BCRYPT_SHA256_ALGORITHM, 32, t); }
+
+std::string net_Sha1File(const std::wstring& path) { return HashFile(path, BCRYPT_SHA1_ALGORITHM, 20, nullptr); }

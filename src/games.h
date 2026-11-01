@@ -22,6 +22,7 @@ struct GameInfo {
     const char* stage;       // how far the port is, shown on its page
     bool playable;
     bool archipelago;        // the build connects to an Archipelago server (RECOMP_AP_SERVER / RECOMP_AP_SLOT)
+    const char* edition;     // the disc the port is written for ("PAL" / "USA"): its build is installed until a disc says otherwise
     float hue;               // the accent on its spine and page
 };
 
@@ -38,6 +39,7 @@ struct GameState {
     bool has_disc = false;    // game\default.xbe
     bool has_image = false;   // game\*.iso waiting to be unpacked by the game's own launcher
     int disc = -1;            // gamecheck list of game\, -1 unknown
+    std::string xbe_edition;  // "PAL" / "USA" from default.xbe's SHA-1, for a game with no file list (Prisoner of Azkaban)
     bool wrong_game = false;  // game\ holds another game's disc
     bool running = false;
     // newest release on GitHub (filled in by the background check)

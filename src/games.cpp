@@ -18,13 +18,13 @@ namespace {
 const GameInfo kGames[] = {
     {"hp1", "Philosopher's Stone", "Harry Potter and the Philosopher's Stone", "Sorcerer's Stone", "2003",
      "Barthes-Recompiled/HP1-Recompiled", L"hpps_launcher.exe", L"hpps.toml", L"Local\\hpps_game_running",
-     "Playable from start to finish", true, true, 0.0f},
+     "Playable from start to finish", true, true, "PAL", 0.0f},
     {"hp2", "Chamber of Secrets", "Harry Potter and the Chamber of Secrets", nullptr, "2002",
      "Barthes-Recompiled/HP2-Recompiled", L"hpcos_launcher.exe", L"hpcos.toml", L"Local\\hpcos_game_running",
-     "Playable from start to finish", true, false, 0.38f},
+     "Playable from start to finish", true, false, "USA", 0.38f},
     {"hp3", "Prisoner of Azkaban", "Harry Potter and the Prisoner of Azkaban", nullptr, "2004",
      "Barthes-Recompiled/HP3-Recompiled", L"hppoa_launcher.exe", L"hppoa.toml", L"Local\\hppoa_game_running",
-     "Beta: playable from the Hogwarts Express on (NTSC-US disc)", true, false, 0.62f},
+     "Beta: playable from the Hogwarts Express on", true, false, "USA", 0.62f},
 };
 constexpr int kCount = int(std::size(kGames));
 
@@ -211,6 +211,7 @@ const ReleaseZip* PickZip(int i, std::string& edition) {
     const GameState& st = g_state[i];
     edition.clear();
     const char* want = games_DiscEdition(i);
+    if (!want) want = kGames[i].edition;
     const ReleaseZip* first = nullptr;
     for (const ReleaseZip& z : st.release.zips) {
         std::string lower = z.name;
@@ -484,6 +485,17 @@ void games_Refresh(int i) {
     wchar_t image[MAX_PATH];
     s.has_image = !s.has_disc && IsDir(game) && xiso_Find(game.c_str(), image);
     s.disc = s.has_disc ? disc_IdentifyFolder(game.c_str()) : -1;
+    // a game without file lists: its edition from default.xbe's SHA-1 (the port's port/region/*.json)
+    s.xbe_edition.clear();
+    if (s.has_disc && s.disc < 0) {
+        static const struct { const char *game, *sha1, *edition; } kXbes[] = {
+            {"hp3", "51b09e01169fda86f2cb7e5ce45ee80a10268918", "USA"},
+            {"hp3", "c8841e3c1d2d5ec20dbe286e5bec9bb5104b41f9", "PAL"},
+        };
+        std::string sha = net_Sha1File(game + L"\\default.xbe");
+        for (const auto& x : kXbes)
+            if (strcmp(x.game, g.id) == 0 && sha == x.sha1) s.xbe_edition = x.edition;
+    }
     s.wrong_game = s.disc >= 0 && strcmp(disc_Get(s.disc)->game, g.id) != 0;
     s.verified = IniGet(g.id, "verified");
     s.build_edition = s.installed ? IniGet(g.id, "build_edition") : "";
@@ -527,7 +539,8 @@ bool games_UpdateAvailable(int i) {
 
 const char* games_DiscEdition(int i) {
     const GameState& s = g_state[i];
-    return s.disc >= 0 && !s.wrong_game ? EditionTag(disc_Get(s.disc)->edition) : nullptr;
+    if (s.disc >= 0 && !s.wrong_game) return EditionTag(disc_Get(s.disc)->edition);
+    return s.xbe_edition.empty() ? nullptr : s.xbe_edition.c_str();
 }
 
 bool games_BuildMismatch(int i) {

@@ -30,7 +30,7 @@
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND, UINT, WPARAM, LPARAM);
 
 #ifndef BARTHES_VERSION
-#define BARTHES_VERSION "1.0.0"
+#define BARTHES_VERSION "1.0.1"
 #endif
 
 namespace {
@@ -412,6 +412,13 @@ std::string DiscLine(int i, ImU32& mark) {
         return std::string("game\\ holds ") + games_Info(d->game[2] - '1').title + " (" + d->edition + "), not this game";
     }
     if (s.has_disc) {
+        if (s.disc < 0 && !s.xbe_edition.empty()) {  // known by its default.xbe alone (no file list to verify against)
+            bool other = games_BuildMismatch(i);
+            mark = other ? kWarn : kGood;
+            return s.xbe_edition + " disc" +
+                   (other ? ", but the installed build is for the " + s.build_edition + " disc: reinstall to get the right one"
+                          : "");
+        }
         if (s.disc < 0) {
             mark = games_Info(i).playable ? kWarn : kInkSoft;
             return games_Info(i).playable ? "Present, but not a disc the launcher recognises" : "Present";

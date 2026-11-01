@@ -39,6 +39,8 @@ bool net_LatestRelease(const std::string& project, Release& r, std::string& erro
 
 // lowercase hex SHA-256 of a file, empty when it could not be read
 std::string net_Sha256File(const std::wstring& path, Transfer* t);
+// SHA-1 of a file, hex: which disc a default.xbe comes from when no file list knows the game
+std::string net_Sha1File(const std::wstring& path);
 
 std::wstring Widen(const std::string& s);
 std::string Narrow(const std::wstring& w);
