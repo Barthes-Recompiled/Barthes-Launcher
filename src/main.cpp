@@ -277,6 +277,55 @@ bool g_nav_shown = false;      // the controller or the keys were used last, not
 bool g_ui_holds_back = false;  // last frame a dropdown, the quit question or a text field had B and Esc for itself
 bool g_quit_ask = false;
 
+// ── couch mode: full screen, for a controller (Quiver, Steam Big Picture, a TV) ─────────────────────────────────
+// Play minimizes the launcher and waits for the game, then brings it back, since whatever started the launcher
+// (Quiver) is watching its process: closing on start would tell it the session ended.
+bool g_couch = false;
+bool g_waiting = false;          // a game started from couch mode is running; the launcher waits, minimized
+bool g_quit_after_game = false;  // --quit-after-game: once that game ends, so does the launcher
+RECT g_window_rect{};            // the window's place before it went full screen
+
+void SetCouch(bool on) {
+    if (on == g_couch) return;
+    g_couch = on;
+    if (on) {
+        GetWindowRect(g_hwnd, &g_window_rect);
+        MONITORINFO mi{sizeof mi};
+        GetMonitorInfoW(MonitorFromWindow(g_hwnd, MONITOR_DEFAULTTONEAREST), &mi);
+        const RECT& m = mi.rcMonitor;
+        SetWindowLongPtrW(g_hwnd, GWL_STYLE, WS_POPUP | WS_VISIBLE);
+        SetWindowPos(g_hwnd, HWND_TOP, m.left, m.top, m.right - m.left, m.bottom - m.top, SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+    } else {
+        const RECT& r = g_window_rect;
+        SetWindowLongPtrW(g_hwnd, GWL_STYLE, WS_OVERLAPPEDWINDOW | WS_VISIBLE);
+        SetWindowPos(g_hwnd, nullptr, r.left, r.top, r.right - r.left, r.bottom - r.top,
+                     SWP_FRAMECHANGED | SWP_NOZORDER | SWP_SHOWWINDOW);
+    }
+}
+
+// Steam's Big Picture (and a Steam Deck's Game Mode) starts the launcher in couch mode
+bool StartedByBigPicture() {
+    wchar_t v[8];
+    if (GetEnvironmentVariableW(L"SteamTenfoot", v, 8) && v[0] == L'1') return true;
+    if (GetEnvironmentVariableW(L"SteamDeck", v, 8) && v[0] == L'1') return true;
+    return GetEnvironmentVariableW(L"SteamGamepadUI", v, 8) > 0;
+}
+
+// after the game: the launcher back in front, the focus on Play again
+void ComeBack() {
+    HWND fg = GetForegroundWindow();
+    DWORD me = GetCurrentThreadId(), them = fg ? GetWindowThreadProcessId(fg, nullptr) : 0;
+    bool attached = them && them != me && AttachThreadInput(me, them, TRUE);
+    ShowWindow(g_hwnd, SW_RESTORE);
+    SetForegroundWindow(g_hwnd);
+    BringWindowToTop(g_hwnd);
+    if (attached) AttachThreadInput(me, them, FALSE);
+    if (GetForegroundWindow() != g_hwnd) FlashWindow(g_hwnd, TRUE);  // Windows kept the focus elsewhere
+    g_zone = ZONE_PAGE;
+    g_focus_page = true;
+    pad_Hold();
+}
+
 // call before a control: it takes the focus if the page wants it placed and this control can be used
 void FocusHere(bool usable) {
     if (g_focus_page && usable) {
@@ -371,6 +420,12 @@ void StartGame(int i, bool settings) {
     std::string err;
     if (!games_Play(i, settings, err)) {
         Say(err, true);
+        return;
+    }
+    if (g_couch || g_quit_after_game) {  // wait for the game, then come back (or quit) after it
+        Say("", false);
+        g_waiting = true;
+        ShowWindow(g_hwnd, SW_MINIMIZE);
         return;
     }
     if (settings) return;
@@ -790,6 +845,10 @@ void DrawColophon(ImVec2 a, ImVec2 b, float sc) {
     ImGui::SetNextItemWidth(260 * sc);
     if (ImGui::Combo("##labels", &games_PadLabels(), labels, 3)) games_Save();
     if (ImGui::Checkbox("Show what the controller's buttons do along the bottom", &games_PadHints())) games_Save();
+    if (ImGui::Checkbox("Couch mode: start full screen, for a controller (View or F11 switches)", &games_Couch())) {
+        SetCouch(games_Couch());
+        games_Save();
+    }
     if (RuleButton("Check for game updates")) {
         games_CheckReleasesAsync();
         Say("Checking GitHub...", false);
@@ -803,7 +862,7 @@ void DrawColophon(ImVec2 a, ImVec2 b, float sc) {
 
 // ── the controller's hints, along the foot of the page ─────────────────────────────────────────────────────────
 
-enum Glyph { G_A, G_B, G_X, G_Y, G_SHOULDERS, G_START, G_LEFT_RIGHT };
+enum Glyph { G_A, G_B, G_X, G_Y, G_SHOULDERS, G_START, G_VIEW, G_LEFT_RIGHT };
 
 bool HintsShown() { return pad_Connected() && games_PadHints(); }
 
@@ -826,6 +885,7 @@ float DrawGlyph(ImDrawList* dl, Glyph g, ImVec2 p, float h, float sc) {
         return w + pill(r);
     }
     if (g == G_START) return pill(kind == LABELS_PLAYSTATION ? "Options" : kind == LABELS_NINTENDO ? "+" : "Menu");
+    if (g == G_VIEW) return pill(kind == LABELS_PLAYSTATION ? "Share" : kind == LABELS_NINTENDO ? "-" : "View");
     if (g == G_LEFT_RIGHT) {  // the d-pad's left and right, as two small arrows
         float w = h * 1.5f, r = h * 0.22f;
         dl->AddRectFilled(p, ImVec2(p.x + w, p.y + h), kInk, h * 0.5f);
@@ -861,7 +921,7 @@ float DrawGlyph(ImDrawList* dl, Glyph g, ImVec2 p, float h, float sc) {
 
 void DrawHints(ImDrawList* dl, ImVec2 a, ImVec2 b, float sc) {
     struct Hint { Glyph g; const char* does; };
-    Hint hints[6];
+    Hint hints[7];
     int n = 0;
     bool game = g_sel < games_Count();
     if (g_ui_holds_back) {
@@ -878,6 +938,7 @@ void DrawHints(ImDrawList* dl, ImVec2 a, ImVec2 b, float sc) {
         if (game) hints[n++] = {G_SHOULDERS, "Play / Archipelago"};
         if (CanPlay(g_sel)) hints[n++] = {G_START, "Play"};
         if (CanOpenSettings(g_sel)) hints[n++] = {G_Y, "Game settings"};
+        hints[n++] = {G_VIEW, g_couch ? "Window" : "Full screen"};
     }
     dl->AddLine(ImVec2(a.x + 60 * sc, a.y), ImVec2(b.x - 40 * sc, a.y), kPaperEdge, 1.0f * sc);
     float h = 24 * sc, x = a.x + 60 * sc, y = (a.y + b.y - h) * 0.5f;
@@ -932,6 +993,7 @@ void HandleActions() {
         g_nav_shown = false;
     }
     if (ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId)) return;  // the quit question or a dropdown has the buttons
+    if ((pr & PAD_BACK) || key(ImGuiKey_F11)) SetCouch(!g_couch);
 
     bool back = (pr & PAD_B) || kb_esc;
     if (g_zone == ZONE_SHELF) {
@@ -989,6 +1051,7 @@ void DrawFrame(float sc) {
     DrawQuitQuestion(sc);
     PopPaperStyle();
     g_ui_holds_back = ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId) || ImGui::IsAnyItemActive();
+    if (g_couch && g_nav_shown) ImGui::SetMouseCursor(ImGuiMouseCursor_None);  // no arrow over a TV while the pad drives
     ImGui::End();
 }
 
@@ -1043,9 +1106,6 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE, LPSTR, int show) {
         MessageBoxW(nullptr, L"Direct3D 11 could not be started.", L"Barthes Launcher", MB_ICONERROR);
         return 1;
     }
-    ShowWindow(g_hwnd, show);
-    UpdateWindow(g_hwnd);
-
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGui::GetIO().IniFilename = nullptr;
@@ -1062,26 +1122,36 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE, LPSTR, int show) {
     games_Load();
     games_RefreshAll();
     games_CheckReleasesAsync();
-    // open on the first game that is installed, else the first; --page <hp1|hp2|hp3|colophon> [--tab archipelago]
-    // picks one (for screenshots and tests)
+    // open on the game played last if it's still installed, else the first that is installed, else the first;
+    // --page <hp1|hp2|hp3|colophon> [--tab archipelago] picks one. --couch (or --window) starts in couch mode (or not),
+    // whatever the setting; --play starts the page's game at once and --quit-after-game closes the launcher after it,
+    // so a Quiver or Steam entry can be one game: --page hp1 --play --couch --quit-after-game
     for (int i = 0; i < games_Count(); i++)
         if (games_State(i).installed) { g_sel = i; break; }
+    int last = games_LastPlayed();
+    if (last >= 0 && last < games_Count() && games_State(last).installed) g_sel = last;
+    bool couch = games_Couch() || StartedByBigPicture(), play = false;
     int argc = 0;
     wchar_t** argv = CommandLineToArgvW(GetCommandLineW(), &argc);
-    for (int k = 1; argv && k + 1 < argc; k++) {
-        std::string v = Narrow(argv[k + 1]);
-        if (!wcscmp(argv[k], L"--page")) {
+    for (int k = 1; argv && k < argc; k++) {
+        std::string v = k + 1 < argc ? Narrow(argv[k + 1]) : "";
+        if (!wcscmp(argv[k], L"--couch")) {
+            couch = true;
+        } else if (!wcscmp(argv[k], L"--window")) {
+            couch = false;
+        } else if (!wcscmp(argv[k], L"--quit-after-game")) {
+            g_quit_after_game = true;
+        } else if (!wcscmp(argv[k], L"--page")) {
             if (v == "colophon") g_sel = games_Count();
             for (int i = 0; i < games_Count(); i++)
                 if (v == games_Info(i).id) g_sel = i;
         } else if (!wcscmp(argv[k], L"--tab")) {
             g_tab = v == "archipelago" ? 1 : 0;
         } else if (!wcscmp(argv[k], L"--play")) {
-            std::string err;
-            if (!games_Play(g_sel, false, err)) Say(err, true);
+            play = true;  // once the window is up (below)
         } else if (!wcscmp(argv[k], L"--install")) {
             g_install_when_known = true;
-        } else if (!wcscmp(argv[k], L"--verify") || !wcscmp(argv[k], L"--import")) {
+        } else if ((!wcscmp(argv[k], L"--verify") || !wcscmp(argv[k], L"--import")) && k + 1 < argc) {
             // unattended tests: verify the page's game, or bring in a disc for it
             std::string err;
             bool ok = argv[k][2] == L'v' ? games_StartVerify(g_sel) : games_StartImport(g_sel, argv[k + 1], err);
@@ -1089,6 +1159,10 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE, LPSTR, int show) {
         }
     }
     if (argv) LocalFree(argv);
+    if (couch) SetCouch(true);
+    else ShowWindow(g_hwnd, show);
+    UpdateWindow(g_hwnd);
+    if (play && g_sel < games_Count()) StartGame(g_sel, false);
 
     bool done = false, first_frame = true;
     while (!done) {
@@ -1099,13 +1173,25 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE, LPSTR, int show) {
             if (msg.message == WM_QUIT) done = true;
         }
         if (done) break;
+        if (g_waiting && !games_Running()) {  // the game started from couch mode has ended
+            g_waiting = false;
+            if (g_quit_after_game) break;
+            ComeBack();
+            games_RefreshAll();
+        }
         if (g_minimized) {
             games_Poll();
             Sleep(100);
             continue;
         }
         float now = GetDpiForWindow(g_hwnd) / 96.0f;
-        if (std::fabs(now - sc) > 0.01f) {  // moved to a monitor with another scale
+        if (g_couch) {  // as large as the screen allows, the window's 1060x700 layout scaled up to fit
+            RECT c;
+            GetClientRect(g_hwnd, &c);
+            float fit = std::min(c.right / (1060 * now), c.bottom / (700 * now)) * 0.95f;
+            if (fit > 1.0f) now *= std::floor(fit * 20.0f) / 20.0f;
+        }
+        if (std::fabs(now - sc) > 0.01f) {  // moved to a monitor with another scale, or in or out of couch mode
             sc = now;
             ApplyStyle(sc);
             LoadFonts(sc);

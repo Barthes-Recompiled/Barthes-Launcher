@@ -69,6 +69,17 @@ Archipelago, **Menu** plays the game and **Y** opens its settings. The arrow key
 the bottom shows what the buttons do; the Colophon can label them as on a PlayStation or Nintendo controller, or hide
 the bar. The launcher ignores the controller while a game (or any other window) is in front.
 
+**Couch mode** fills the screen and scales the shelf and pages up for a TV. It comes on with `--couch`, by itself when
+Steam's Big Picture (or a Steam Deck's Game Mode) starts the launcher, or from the Colophon; **View** or F11 switches at
+any time. In couch mode **Play** minimizes the launcher and waits for the game, then brings it back with the focus on
+Play, so a front end that started the launcher (Quiver, Steam) sees one session from start to quit. **B** on the shelf
+quits.
+
+To add the launcher to [Quiver](https://github.com/tgeorgiadis/quiver-launcher) or Steam, point the entry at
+`barthes_launcher.exe` and give it `--couch` as its launch options. For an entry that is one game, use
+`--page hp1 --play --couch --quit-after-game` (`hp2`, `hp3` for the others): the launcher checks the game, starts it
+and closes when it does. `--window` starts in a window even where couch mode would come on.
+
 ## Archipelago
 
 Philosopher's Stone can be played in an [Archipelago](https://archipelago.gg) multiworld. On its **Archipelago** page,

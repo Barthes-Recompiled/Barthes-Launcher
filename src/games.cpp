@@ -34,6 +34,9 @@ std::string g_project[kCount];  // where releases come from: the game's project,
 int g_after_start = AFTER_MINIMIZE;
 int g_pad_labels = LABELS_XBOX;
 bool g_pad_hints = true;
+bool g_couch = false;
+int g_last_played = -1;
+HANDLE g_game_process = nullptr;  // the game Play started last, while the launcher waits for it
 Job g_job;
 HANDLE g_job_thread = nullptr;
 
@@ -443,6 +446,16 @@ GameState& games_State(int i) { return g_state[i]; }
 int& games_AfterStart() { return g_after_start; }
 int& games_PadLabels() { return g_pad_labels; }
 bool& games_PadHints() { return g_pad_hints; }
+bool& games_Couch() { return g_couch; }
+int& games_LastPlayed() { return g_last_played; }
+
+bool games_Running() {
+    if (!g_game_process) return false;
+    if (WaitForSingleObject(g_game_process, 0) == WAIT_TIMEOUT) return true;
+    CloseHandle(g_game_process);
+    g_game_process = nullptr;
+    return false;
+}
 Job& games_Job() { return g_job; }
 
 std::wstring games_ExeDir() {
@@ -458,6 +471,10 @@ void games_Load() {
     std::string labels = IniGet("launcher", "pad_labels", "xbox");
     g_pad_labels = labels == "playstation" ? LABELS_PLAYSTATION : labels == "nintendo" ? LABELS_NINTENDO : LABELS_XBOX;
     g_pad_hints = IniGet("launcher", "pad_hints", "true") != "false";
+    g_couch = IniGet("launcher", "couch", "false") == "true";
+    std::string last = IniGet("launcher", "last_played");
+    for (int i = 0; i < kCount; i++)
+        if (last == kGames[i].id) g_last_played = i;
     for (int i = 0; i < kCount; i++) {
         GameState& s = g_state[i];
         const char* id = kGames[i].id;
@@ -481,6 +498,8 @@ void games_Save() {
     const char* labels[] = {"xbox", "playstation", "nintendo"};
     IniSet("launcher", "pad_labels", labels[g_pad_labels]);
     IniSet("launcher", "pad_hints", g_pad_hints ? "true" : "false");
+    IniSet("launcher", "couch", g_couch ? "true" : "false");
+    IniSet("launcher", "last_played", g_last_played >= 0 ? kGames[g_last_played].id : "");
     for (int i = 0; i < kCount; i++) {
         GameState& s = g_state[i];
         const char* id = kGames[i].id;
@@ -632,7 +651,10 @@ bool games_Play(int i, bool settings, std::string& error) {
         return false;
     }
     CloseHandle(pi.hThread);
-    CloseHandle(pi.hProcess);
+    if (g_game_process) CloseHandle(g_game_process);
+    g_game_process = pi.hProcess;  // kept, so couch mode can wait for the game and come back after it
+    g_last_played = i;
+    games_Save();
     return true;
 }
 
